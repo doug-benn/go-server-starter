@@ -28,30 +28,30 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// var port uint
-	// fs := flag.NewFlagSet(args[0], flag.ExitOnError)
-	// fs.SetOutput(w)
-	// fs.UintVar(&port, "port", 8080, "port for HTTP API")
-	// if err := fs.Parse(args[1:]); err != nil {
-	// 	return err
-	// }
-
+	//TODO Make this an Env Var
 	port := 8080
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 
-	db, err := database.NewDatabase(slog.Default(), true, true)
+	//Database Connection
+	dbClient, err := database.NewDatabase(slog.Default(), true, true)
 	if err != nil {
 		slog.Error("%s", err)
 	}
-	defer db.Stop()
-	db.Start(ctx)
-
+	defer dbClient.Stop()
+	dbClient.Start(ctx)
 	slog.InfoContext(ctx, "database connection started")
 
+	//Database Services
+	dbInterface, err := database.NewPostgresInterface(dbClient)
+	if err != nil {
+		slog.Error("%s", err)
+	}
+
+	//HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slog.Default(), version),
+		Handler:           route(slog.Default(), version, dbInterface),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -63,24 +63,24 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		}
 	}()
 
+	//Server Shutdown
 	select {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		db.Stop()
+		dbClient.Stop()
 		slog.InfoContext(ctx, "shutting down server")
 	}
 
 	ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-
 	return server.Shutdown(ctx)
 }
 
-func route(log *slog.Logger, version string) http.Handler {
+func route(log *slog.Logger, version string, dbInterface *database.PostgresInterface) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /helloworld", router.HandleHelloWorld())
+	mux.Handle("GET /helloworld", router.HandleHelloWorld(log, dbInterface))
 
 	// System Routes for debug/logging
 	mux.Handle("GET /health", router.HandleGetHealth(version))

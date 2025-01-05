@@ -51,8 +51,10 @@ func NewDatabase(log *slog.Logger, connLimits bool, idleLimits bool) (*Database,
 	config := postgreConfig{}
 	config.loadPostgresConfig()
 
-	connStr := "postgres://" + config.User + ":" + config.Password +
-		"@" + config.Host + "/" + config.Port + "?sslmode=disable&connect_timeout=1"
+	connStr := "postgresql://" + config.User + ":" + config.Password +
+		"@" + config.Host + ":" + config.Port + "/" + config.Database + "?sslmode=disable&connect_timeout=1"
+
+	fmt.Println(connStr)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -71,10 +73,6 @@ func NewDatabase(log *slog.Logger, connLimits bool, idleLimits bool) (*Database,
 		sql:    db,
 		logger: log,
 	}, nil
-}
-
-func (db *Database) String() string {
-	return "postgres database"
 }
 
 // Start pings the database, and if it fails, retries up to 3 times
@@ -117,7 +115,7 @@ func (db *Database) Stop() (err error) {
 	db.startStopMutex.Lock()
 	defer db.startStopMutex.Unlock()
 	if !db.running {
-		return fmt.Errorf("%s", "database service is already stopped")
+		return fmt.Errorf("%s", "database is not running")
 	}
 
 	err = db.sql.Close()
