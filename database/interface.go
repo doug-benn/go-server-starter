@@ -1,11 +1,8 @@
 package database
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
 	"log"
-	"time"
 )
 
 type dbInterface interface {
@@ -23,93 +20,40 @@ func NewPostgresInterface(db *Database) (*PostgresInterface, error) {
 	return &PostgresInterface{db: db}, nil
 }
 
-////////
-
 func (s *PostgresInterface) GetAccountByID(id int) (*Comment, error) {
-	rows, err := s.db.sql.Query("SELECT comment FROM comments;")
+	comments := []Comment{}
+
+	rows, err := s.db.sql.Query("SELECT id, comments FROM comments;")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var title string
-		if err := rows.Scan(&title); err != nil {
+		var comment Comment
+		if err := rows.Scan(&comment.ID, &comment.Comment); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(title)
+		fmt.Println(comment)
+		comments = append(comments, comment)
 	}
 	if err := rows.Err(); err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println(comments)
 
 	return nil, nil
 }
 
-func (s *PostgresInterface) GetAccounts() ([]*Comment, error) {
-	rows, err := s.db.sql.Query("select * from comments")
-	if err != nil {
-		return nil, err
-	}
-
-	accounts := []*Comment{}
-	for rows.Next() {
-		account, err := scanIntoAccount(rows)
-		if err != nil {
-			return nil, err
-		}
-		accounts = append(accounts, account)
-	}
-
-	return accounts, nil
-}
-
-func scanIntoAccount(rows *sql.Rows) (*Comment, error) {
-	comment := new(Comment)
-	err := rows.Scan(
-		&comment.ID,
-		&comment.Comment,
-		&comment.CreatedAt,
-		&comment.UpdatedAt)
-
-	return comment, err
-}
-
-///////
-
-func (p *PostgresInterface) Get(id string) (*Comment, error) {
-	query := `
-        SELECT *
-        FROM comments
-        WHERE id = $1`
-
-	var comment Comment
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	err := p.db.sql.QueryRowContext(ctx, query, id).Scan(
-		&comment.ID,
-		&comment.Comment,
-		&comment.CreatedAt,
-		&comment.UpdatedAt,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &comment, nil
-}
-
 func (p *PostgresInterface) GetAll() (*[]Comment, error) {
-	query := `SELECT * FROM comments`
+	query := `SELECT * FROM comments;`
 
 	comments := []Comment{}
+	fmt.Println("Gettings All Data")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	// ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// defer cancel()
 
-	rows, err := p.db.sql.QueryContext(ctx, query)
+	rows, err := p.db.sql.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +61,9 @@ func (p *PostgresInterface) GetAll() (*[]Comment, error) {
 
 	for rows.Next() {
 		comment := &Comment{}
+		fmt.Println("Gettings All Data")
 
+		fmt.Println(comment)
 		if err := rows.Scan(
 			&comment.ID,
 			&comment.Comment,
@@ -126,6 +72,7 @@ func (p *PostgresInterface) GetAll() (*[]Comment, error) {
 		); err != nil {
 			return nil, err
 		}
+		fmt.Println(comment)
 		comments = append(comments, *comment)
 	}
 

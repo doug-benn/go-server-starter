@@ -25,12 +25,12 @@ func HandleHelloWorld(log *slog.Logger, dbInterface *database.PostgresInterface)
 	return func(w http.ResponseWriter, _ *http.Request) {
 		log.Info("Getting data from DB")
 
-		// data, _ := dbInterface.GetAll()
-		// fmt.Printf("Data has value %+v\n", data)
+		data, _ := dbInterface.GetAll()
+		fmt.Printf("Data has value %+v\n", data)
 		// data2, _ := dbInterface.Get("1")
 		// fmt.Printf("Data2 has value %+v\n", data2)
-		data, _ := dbInterface.GetAccountByID(1)
-		fmt.Printf("Data3 has value %+v\n", data)
+		data2, _ := dbInterface.GetAccountByID(1)
+		fmt.Printf("Data3 has value %+v\n", data2)
 		// data4, _ := dbInterface.GetAccounts()
 		// fmt.Printf("Data4 has value %+v\n", data4)
 
