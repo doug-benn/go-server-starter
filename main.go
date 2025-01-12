@@ -13,6 +13,7 @@ import (
 
 	"github.com/doug-benn/go-json-api/database"
 	"github.com/doug-benn/go-json-api/router"
+	"github.com/patrickmn/go-cache"
 )
 
 func main() {
@@ -28,12 +29,14 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	//TODO Make this an Env Var
+	// TODO Make this an Env Var
 	port := 8080
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
 
-	//Database Connection
+	cache := cache.New(5*time.Minute, 10*time.Minute)
+
+	// Database Connection
 	dbClient, err := database.NewDatabase(slog.Default(), true, true)
 	if err != nil {
 		slog.Error("%s", err)
@@ -42,16 +45,16 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	dbClient.Start(ctx)
 	slog.InfoContext(ctx, "database connection started")
 
-	//Database Services
+	// Database Services
 	dbInterface, err := database.NewPostgresInterface(dbClient)
 	if err != nil {
 		slog.Error("%s", err)
 	}
 
-	//HTTP Server
+	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slog.Default(), version, dbInterface),
+		Handler:           route(slog.Default(), version, dbInterface, cache),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -63,7 +66,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		}
 	}()
 
-	//Server Shutdown
+	// Server Shutdown
 	select {
 	case err := <-errChan:
 		return err
@@ -77,10 +80,20 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	return server.Shutdown(ctx)
 }
 
-func route(log *slog.Logger, version string, dbInterface *database.PostgresInterface) http.Handler {
+func corsHandler(h http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			// handle preflight in here
+		} else {
+			h.ServeHTTP(w, r)
+		}
+	}
+}
+
+func route(log *slog.Logger, version string, dbInterface *database.PostgresInterface, cache *cache.Cache) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /helloworld", router.HandleHelloWorld(log, dbInterface))
+	mux.Handle("GET /helloworld", router.HandleHelloWorld(log, dbInterface, cache))
 
 	// System Routes for debug/logging
 	mux.Handle("GET /health", router.HandleGetHealth(version))

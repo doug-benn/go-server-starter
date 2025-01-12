@@ -5,39 +5,42 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/doug-benn/go-json-api/database"
+	"github.com/patrickmn/go-cache"
 )
 
-func HandleHelloWorld(log *slog.Logger, dbInterface *database.PostgresInterface) http.HandlerFunc {
+func HandleHelloWorld(log *slog.Logger, dbInterface *database.PostgresInterface, cache *cache.Cache) http.HandlerFunc {
+	type responseBody struct {
+		Message string `json:"Message"`
+		Uptime  string `json:"Uptime"`
+	}
 
-	// type responseBody struct {
-	// 	Message string `json:"Message"`
-	// 	Uptime  string `json:"Uptime"`
-	// }
-
-	//res := responseBody{Message: "Hello World"}
+	res := responseBody{Message: "Hello World"}
 
 	// ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	// defer cancel()
-
-	//up := time.Now()
+	//
+	up := time.Now()
 	return func(w http.ResponseWriter, _ *http.Request) {
-		log.Info("Getting data from DB")
+		var data responseBody
 
-		data, _ := dbInterface.GetAll()
-		fmt.Printf("Data has value %+v\n", data)
-		// data2, _ := dbInterface.Get("1")
-		// fmt.Printf("Data2 has value %+v\n", data2)
-		data2, _ := dbInterface.GetAccountByID(1)
-		fmt.Printf("Data3 has value %+v\n", data2)
-		// data4, _ := dbInterface.GetAccounts()
-		// fmt.Printf("Data4 has value %+v\n", data4)
+		if cachedData, found := cache.Get("helloworld"); found {
+			fmt.Println("Found Data in Cache")
+			data = cachedData.(responseBody)
+		} else {
+			fmt.Println("Didn't find data is cache, so settings it")
+			res.Uptime = time.Since(up).String()
+			cache.Set("helloworld", res, 30*time.Second)
+			data = res
+		}
+
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
-		//res.Uptime = time.Since(up).String()
 		if err := json.NewEncoder(w).Encode(data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
