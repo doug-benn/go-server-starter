@@ -42,7 +42,7 @@ func (p *postgreConfig) loadPostgresConfig() {
 type Database struct {
 	startStopMutex sync.Mutex
 	running        bool
-	sql            *sql.DB
+	Sql            *sql.DB
 	logger         *slog.Logger
 }
 
@@ -70,7 +70,7 @@ func NewDatabase(log *slog.Logger, connLimits bool, idleLimits bool) (*Database,
 	}
 
 	return &Database{
-		sql:    db,
+		Sql:    db,
 		logger: log,
 	}, nil
 }
@@ -90,7 +90,7 @@ func (db *Database) Start(ctx context.Context) (runError <-chan error, err error
 	const sleepDuration = 200 * time.Millisecond
 	var totalTryTime time.Duration
 	for {
-		err = db.sql.PingContext(ctx)
+		err = db.Sql.PingContext(ctx)
 		if err == nil {
 			break
 		} else if ctx.Err() != nil {
@@ -118,7 +118,7 @@ func (db *Database) Stop() (err error) {
 		return fmt.Errorf("%s", "database is not running")
 	}
 
-	err = db.sql.Close()
+	err = db.Sql.Close()
 	if err != nil {
 		return fmt.Errorf("closing database connection: %w", err)
 	}

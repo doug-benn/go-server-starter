@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/doug-benn/go-json-api/database"
+	"github.com/doug-benn/go-server-starter/services"
 	"github.com/patrickmn/go-cache"
 )
 
-func HandleHelloWorld(log *slog.Logger, dbInterface *database.PostgresInterface, cache *cache.Cache) http.HandlerFunc {
+func HandleHelloWorld(log *slog.Logger, dbService *services.Service, cache *cache.Cache) http.HandlerFunc {
 	type responseBody struct {
 		Message string `json:"Message"`
 		Uptime  string `json:"Uptime"`

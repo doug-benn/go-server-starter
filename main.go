@@ -11,8 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/doug-benn/go-json-api/database"
-	"github.com/doug-benn/go-json-api/router"
+	"github.com/doug-benn/go-server-starter/database"
+	"github.com/doug-benn/go-server-starter/router"
+	"github.com/doug-benn/go-server-starter/services"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -46,7 +47,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	slog.InfoContext(ctx, "database connection started")
 
 	// Database Services
-	dbInterface, err := database.NewPostgresInterface(dbClient)
+	services := services.NewService(dbClient)
 	if err != nil {
 		slog.Error("%s", err)
 	}
@@ -54,7 +55,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slog.Default(), version, dbInterface, cache),
+		Handler:           route(slog.Default(), version, services, cache),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

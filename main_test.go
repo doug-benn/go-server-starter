@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/doug-benn/go-json-api/router"
+	"github.com/doug-benn/go-server-starter/router"
 )
 
 // TestMain starts the server and runs all the tests.

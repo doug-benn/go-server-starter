@@ -2,65 +2,31 @@ package database
 
 import (
 	"fmt"
-	"log"
+
+	"github.com/doug-benn/go-server-starter/models"
 )
 
-type dbInterface interface {
-	GetAll() ([]*Comment, error)
-}
-
-type PostgresInterface struct {
+type PostgresController struct {
 	db *Database
 }
 
-func NewPostgresInterface(db *Database) (*PostgresInterface, error) {
-	// if !db.running {
-	// 	return nil, fmt.Errorf("%s", "database is not running")
-	// }
-	return &PostgresInterface{db: db}, nil
-}
-
-func (s *PostgresInterface) GetAccountByID(id int) (*Comment, error) {
-	comments := []Comment{}
-
-	rows, err := s.db.sql.Query("SELECT id, comments FROM comments;")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var comment Comment
-		if err := rows.Scan(&comment.ID, &comment.Comment); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(comment)
-		comments = append(comments, comment)
-	}
-	if err := rows.Err(); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(comments)
-
-	return nil, nil
-}
-
-func (p *PostgresInterface) GetAll() (*[]Comment, error) {
+func (p *PostgresController) GetAll() (*[]models.Comment, error) {
 	query := `SELECT * FROM comments;`
 
-	comments := []Comment{}
+	comments := []models.Comment{}
 	fmt.Println("Gettings All Data")
 
 	// ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	// defer cancel()
 
-	rows, err := p.db.sql.Query(query)
+	rows, err := p.db.Sql.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		comment := &Comment{}
+		comment := &models.Comment{}
 		fmt.Println("Gettings All Data")
 
 		fmt.Println(comment)
@@ -77,12 +43,6 @@ func (p *PostgresInterface) GetAll() (*[]Comment, error) {
 	}
 
 	fmt.Printf("Data has value %+v\n", comments)
-
-	// comments := []Comment{}
-
-	// comment := &Comment{ID: "1", Comment: "Hello", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	// comments = append(comments, *comment)
-
 	return &comments, nil
 
 }

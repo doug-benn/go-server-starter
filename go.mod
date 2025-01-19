@@ -1,4 +1,4 @@
-module github.com/doug-benn/go-json-api
+module github.com/doug-benn/go-server-starter
 
 go 1.23.1
 
