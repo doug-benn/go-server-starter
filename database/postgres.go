@@ -5,56 +5,50 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/joho/godotenv"
+	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
 )
 
 //Postgres Docker Command
 //docker run --name postgres -e POSTGRES_PASSWORD=password -e POSTGRES_DB=test_db -p 5432:5432 -d postgres
 
-type postgreConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Database string
+// Service represents a service that interacts with a database.
+type PostgresService interface {
+	// Health returns a map of health status information.
+	// The keys and values in the map are service-specific.
+	Health() map[string]string
+
+	Start(context.Context) (<-chan error, error)
+
+	// Close terminates the database connection.
+	// It returns an error if the connection cannot be closed.
+	Stop() error
 }
 
-func (p *postgreConfig) loadPostgresConfig() {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatalf("Error loading .env file")
-	}
-
-	p.Host = os.Getenv("POSTGRES_HOST")
-	p.Port = os.Getenv("POSTGRES_PORT")
-	p.User = os.Getenv("POSTGRES_USER")
-	p.Password = os.Getenv("POSTGRES_PASSWORD")
-	p.Database = os.Getenv("POSTGRES_DB")
-}
+var (
+	host     = os.Getenv("POSTGRES_HOST")
+	port     = os.Getenv("POSTGRES_PORT")
+	user     = os.Getenv("POSTGRES_USER")
+	password = os.Getenv("POSTGRES_PASSWORD")
+	database = os.Getenv("POSTGRES_DB")
+)
 
 // Database is the Postgres implementation of the database store.
-type Database struct {
+type postgresDatabase struct {
 	startStopMutex sync.Mutex
 	running        bool
 	Sql            *sql.DB
-	logger         *slog.Logger
 }
 
 // NewDatabase creates a database connection pool in DB and pings the database.
-func NewDatabase(log *slog.Logger, connLimits bool, idleLimits bool) (*Database, error) {
-	config := postgreConfig{}
-	config.loadPostgresConfig()
-
-	connStr := "postgresql://" + config.User + ":" + config.Password +
-		"@" + config.Host + ":" + config.Port + "/" + config.Database + "?sslmode=disable&connect_timeout=1"
-
-	fmt.Println(connStr)
+func NewDatabase(connLimits bool, idleLimits bool) (PostgresService, error) {
+	connStr := "postgresql://" + user + ":" + password +
+		"@" + host + ":" + port + "/" + database + "?sslmode=disable&connect_timeout=1"
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -69,15 +63,14 @@ func NewDatabase(log *slog.Logger, connLimits bool, idleLimits bool) (*Database,
 		db.SetMaxIdleConns(5)
 	}
 
-	return &Database{
-		Sql:    db,
-		logger: log,
+	return &postgresDatabase{
+		Sql: db,
 	}, nil
 }
 
 // Start pings the database, and if it fails, retries up to 3 times
 // before returning a start error.
-func (db *Database) Start(ctx context.Context) (runError <-chan error, err error) {
+func (db *postgresDatabase) Start(ctx context.Context) (runError <-chan error, err error) {
 	db.startStopMutex.Lock()
 	defer db.startStopMutex.Unlock()
 
@@ -111,7 +104,7 @@ func (db *Database) Start(ctx context.Context) (runError <-chan error, err error
 }
 
 // Stop stops the database and closes the connection.
-func (db *Database) Stop() (err error) {
+func (db *postgresDatabase) Stop() (err error) {
 	db.startStopMutex.Lock()
 	defer db.startStopMutex.Unlock()
 	if !db.running {
@@ -125,4 +118,55 @@ func (db *Database) Stop() (err error) {
 
 	db.running = false
 	return nil
+}
+
+// Health checks the health of the database connection by pinging the database.
+// It returns a map with keys indicating various health statistics.
+func (db *postgresDatabase) Health() map[string]string {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	stats := make(map[string]string)
+
+	// Ping the database
+	err := db.Sql.PingContext(ctx)
+	if err != nil {
+		stats["status"] = "down"
+		stats["error"] = fmt.Sprintf("db down: %v", err)
+		log.Fatalf("db down: %v", err) // Log the error and terminate the program
+		return stats
+	}
+
+	// Database is up, add more statistics
+	stats["status"] = "up"
+	stats["message"] = "It's healthy"
+
+	// Get database stats (like open connections, in use, idle, etc.)
+	dbStats := db.Sql.Stats()
+	stats["open_connections"] = strconv.Itoa(dbStats.OpenConnections)
+	stats["in_use"] = strconv.Itoa(dbStats.InUse)
+	stats["idle"] = strconv.Itoa(dbStats.Idle)
+	stats["wait_count"] = strconv.FormatInt(dbStats.WaitCount, 10)
+	stats["wait_duration"] = dbStats.WaitDuration.String()
+	stats["max_idle_closed"] = strconv.FormatInt(dbStats.MaxIdleClosed, 10)
+	stats["max_lifetime_closed"] = strconv.FormatInt(dbStats.MaxLifetimeClosed, 10)
+
+	// Evaluate stats to provide a health message
+	if dbStats.OpenConnections > 40 { // Assuming 50 is the max for this example
+		stats["message"] = "The database is experiencing heavy load."
+	}
+
+	if dbStats.WaitCount > 1000 {
+		stats["message"] = "The database has a high number of wait events, indicating potential bottlenecks."
+	}
+
+	if dbStats.MaxIdleClosed > int64(dbStats.OpenConnections)/2 {
+		stats["message"] = "Many idle connections are being closed, consider revising the connection pool settings."
+	}
+
+	if dbStats.MaxLifetimeClosed > int64(dbStats.OpenConnections)/2 {
+		stats["message"] = "Many connections are being closed due to max lifetime, consider increasing max lifetime or revising the connection usage pattern."
+	}
+
+	return stats
 }

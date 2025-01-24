@@ -13,7 +13,6 @@ import (
 
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/router"
-	"github.com/doug-benn/go-server-starter/services"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -38,7 +37,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
-	dbClient, err := database.NewDatabase(slog.Default(), true, true)
+	dbClient, err := database.NewDatabase(true, true)
 	if err != nil {
 		slog.Error("%s", err)
 	}
@@ -46,16 +45,10 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	dbClient.Start(ctx)
 	slog.InfoContext(ctx, "database connection started")
 
-	// Database Services
-	services := services.NewService(dbClient)
-	if err != nil {
-		slog.Error("%s", err)
-	}
-
 	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slog.Default(), version, services, cache),
+		Handler:           route(slog.Default(), version, dbClient, cache),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -91,7 +84,7 @@ func corsHandler(h http.Handler) http.HandlerFunc {
 	}
 }
 
-func route(log *slog.Logger, version string, dbInterface *database.PostgresInterface, cache *cache.Cache) http.Handler {
+func route(log *slog.Logger, version string, dbInterface database.PostgresService, cache *cache.Cache) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /helloworld", router.HandleHelloWorld(log, dbInterface, cache))
