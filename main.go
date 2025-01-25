@@ -11,7 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	sloghttp "github.com/samber/slog-http"
+
 	"github.com/doug-benn/go-server-starter/database"
+	"github.com/doug-benn/go-server-starter/logger"
 	"github.com/doug-benn/go-server-starter/router"
 	"github.com/patrickmn/go-cache"
 )
@@ -30,25 +33,29 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	defer cancel()
 
 	// TODO Make this an Env Var
-	port := 8080
+	port := 9080
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(w, nil)))
+	logger := logger.New(logger.Config{FilePath: "logs/logs.json",
+		UserLocalTime:    false,
+		FileMaxSizeInMB:  10,
+		FileMaxAgeInDays: 30,
+		LogLevel:         slog.LevelInfo}, nil, true)
 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
 	dbClient, err := database.NewDatabase(true, true)
 	if err != nil {
-		slog.Error("%s", err)
+		logger.Error("%s", err)
 	}
 	defer dbClient.Stop()
 	dbClient.Start(ctx)
-	slog.InfoContext(ctx, "database connection started")
+	logger.InfoContext(ctx, "database connection started")
 
 	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slog.Default(), version, dbClient, cache),
+		Handler:           route(logger, version, dbClient, cache),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -84,16 +91,17 @@ func corsHandler(h http.Handler) http.HandlerFunc {
 	}
 }
 
-func route(log *slog.Logger, version string, dbInterface database.PostgresService, cache *cache.Cache) http.Handler {
+func route(logger *slog.Logger, version string, dbInterface database.PostgresService, cache *cache.Cache) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /helloworld", router.HandleHelloWorld(log, dbInterface, cache))
+	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, dbInterface, cache))
 
 	// System Routes for debug/logging
 	mux.Handle("GET /health", router.HandleGetHealth(version))
 	mux.Handle("/debug/", router.HandleGetDebug())
 
-	handler := router.Accesslog(mux, log)
-	handler = router.Recovery(handler, log)
+	handler := sloghttp.Recovery(mux)
+	handler = sloghttp.New(logger)(handler)
+
 	return handler
 }

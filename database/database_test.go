@@ -67,14 +67,25 @@ func TestMain(m *testing.M) {
 }
 
 func TestNew(t *testing.T) {
-	srv := New()
+	srv, err := NewDatabase(true, true)
+	if err != nil {
+		t.Fatal("NewDatabase() returned an err", err)
+	}
 	if srv == nil {
-		t.Fatal("New() returned nil")
+		t.Fatal("NewDatabase() returned nil")
 	}
 }
 
 func TestHealth(t *testing.T) {
-	srv := New()
+	srv, err := NewDatabase(true, true)
+	if err != nil {
+		t.Fatal("NewDatabase() returned an err", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	srv.Start(ctx)
 
 	stats := srv.Health()
 
@@ -92,9 +103,17 @@ func TestHealth(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	srv := New()
+	srv, err := NewDatabase(true, true)
+	if err != nil {
+		t.Fatal("NewDatabase() returned an err", err)
+	}
 
-	if srv.Close() != nil {
-		t.Fatalf("expected Close() to return nil")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	srv.Start(ctx)
+
+	if srv.Stop() != nil {
+		t.Fatalf("expected Stop() to return nil")
 	}
 }

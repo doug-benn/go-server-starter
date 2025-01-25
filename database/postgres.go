@@ -33,7 +33,7 @@ type PostgresService interface {
 var (
 	host     = os.Getenv("POSTGRES_HOST")
 	port     = os.Getenv("POSTGRES_PORT")
-	user     = os.Getenv("POSTGRES_USER")
+	username = os.Getenv("POSTGRES_USER")
 	password = os.Getenv("POSTGRES_PASSWORD")
 	database = os.Getenv("POSTGRES_DB")
 )
@@ -47,7 +47,7 @@ type postgresDatabase struct {
 
 // NewDatabase creates a database connection pool in DB and pings the database.
 func NewDatabase(connLimits bool, idleLimits bool) (PostgresService, error) {
-	connStr := "postgresql://" + user + ":" + password +
+	connStr := "postgresql://" + username + ":" + password +
 		"@" + host + ":" + port + "/" + database + "?sslmode=disable&connect_timeout=1"
 
 	db, err := sql.Open("postgres", connStr)
@@ -70,6 +70,7 @@ func NewDatabase(connLimits bool, idleLimits bool) (PostgresService, error) {
 
 // Start pings the database, and if it fails, retries up to 3 times
 // before returning a start error.
+// TODO Remove this and an the logic to the "new service"
 func (db *postgresDatabase) Start(ctx context.Context) (runError <-chan error, err error) {
 	db.startStopMutex.Lock()
 	defer db.startStopMutex.Unlock()
@@ -108,11 +109,13 @@ func (db *postgresDatabase) Stop() (err error) {
 	db.startStopMutex.Lock()
 	defer db.startStopMutex.Unlock()
 	if !db.running {
+		fmt.Println("database is not running")
 		return fmt.Errorf("%s", "database is not running")
 	}
 
 	err = db.Sql.Close()
 	if err != nil {
+		fmt.Println("closing database connection")
 		return fmt.Errorf("closing database connection: %w", err)
 	}
 
