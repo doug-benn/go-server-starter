@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog"
 	sloghttp "github.com/samber/slog-http"
 
 	"github.com/doug-benn/go-server-starter/database"
@@ -48,7 +49,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		return err
 	}
 
-	logger := logger.New(logger.Config{
+	slogLogger := logger.New(logger.Config{
 		FilePath:         "logs/logs.json",
 		UserLocalTime:    false,
 		FileMaxSizeInMB:  10,
@@ -56,15 +57,18 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		LogLevel:         slog.LevelInfo,
 	}, nil, true)
 
+	zeroLogger := logger.Get()
+	zeroLogger.Info().Msg("Zero Logger initialized")
+
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
 	dbClient, err := database.NewDatabase(true, true)
 	if err != nil {
-		logger.Error(err.Error())
+		slogLogger.Error(err.Error())
 	}
 	dbClient.Start(ctx)
-	logger.InfoContext(ctx, "database connection started")
+	slogLogger.InfoContext(ctx, "database connection started")
 
 	//Create metrics middleware.
 	metricsMiddleware := middleware.New(middleware.Config{
@@ -74,13 +78,13 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(logger, version, dbClient, cache, metricsMiddleware),
+		Handler:           route(slogLogger, version, dbClient, cache, metricsMiddleware, zeroLogger),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errChan := make(chan error, 1)
 	go func() {
-		logger.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
+		slogLogger.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}
@@ -88,7 +92,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 
 	// Serve our metrics.
 	go func() {
-		logger.InfoContext(ctx, "metrics listening on", slog.Uint64("port", uint64(port+1)))
+		slogLogger.InfoContext(ctx, "metrics listening on", slog.Uint64("port", uint64(port+1)))
 		if err := http.ListenAndServe(":9201", promhttp.Handler()); err != nil {
 			errChan <- err
 		}
@@ -118,7 +122,7 @@ func corsHandler(h http.Handler) http.HandlerFunc {
 	}
 }
 
-func route(logger *slog.Logger, version string, dbService database.PostgresService, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
+func route(logger *slog.Logger, version string, dbService database.PostgresService, cache *cache.Cache, metricsMiddleware middleware.Middleware, zeroLogger zerolog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, dbService, cache))
@@ -127,9 +131,14 @@ func route(logger *slog.Logger, version string, dbService database.PostgresServi
 	mux.Handle("GET /health", router.HandleGetHealth(version))
 	mux.Handle("/debug/", router.HandleGetDebug())
 
+	mux.Handle("/events", router.HandleEvents())
+
 	handler := sloghttp.Recovery(mux)
 	handler = sloghttp.New(logger)(handler)
 
+	handler = router.RequestLogger(handler)
+
+	//Metrics Handler
 	handler = std.Handler("", metricsMiddleware, handler)
 
 	// Wrap main handler with metrics middleware

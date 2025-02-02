@@ -11,6 +11,9 @@ import (
 	"runtime"
 	"runtime/debug"
 	"time"
+
+	"github.com/doug-benn/go-server-starter/logger"
+	"github.com/rs/zerolog/hlog"
 )
 
 func HandleGetHealth(version string) http.HandlerFunc {
@@ -149,3 +152,51 @@ func (re *responseRecorder) WriteHeader(statusCode int) {
 	re.status = statusCode
 	re.ResponseWriter.WriteHeader(statusCode)
 }
+
+func RequestLogger(next http.Handler) http.Handler {
+	l := logger.Get()
+
+	h := hlog.NewHandler(l)
+
+	accessHandler := hlog.AccessHandler(
+		func(r *http.Request, status, size int, duration time.Duration) {
+			hlog.FromRequest(r).Info().
+				Str("method", r.Method).
+				Stringer("url", r.URL).
+				Int("status_code", status).
+				Int("response_size_bytes", size).
+				Dur("elapsed_ms", duration).
+				Msg("incoming request")
+		},
+	)
+
+	userAgentHandler := hlog.UserAgentHandler("http_user_agent")
+
+	return h(accessHandler(userAgentHandler(next)))
+}
+
+// func Logger(logger zerolog.Logger) func(http.Handler) http.Handler {
+// 	return func(next http.Handler) http.Handler {
+// 		fn := func(rw http.ResponseWriter, r *http.Request) {
+// 			ww := middleware.NewWrapResponseWriter(rw, r.ProtoMajor)
+// 			start := time.Now()
+// 			defer func() {
+// 				logger.Info().
+// 					Str("request-id", GetReqID(r.Context())).
+// 					Int("status", ww.Status()).
+// 					Int("bytes", ww.BytesWritten()).
+// 					Str("method", r.Method).
+// 					Str("path", r.URL.Path).
+// 					Str("query", r.URL.RawQuery).
+// 					Str("ip", r.RemoteAddr).
+// 					Str("trace.id", trace.SpanFromContext(r.Context()).SpanContext().TraceID().String()).
+// 					Str("user-agent", r.UserAgent()).
+// 					Dur("latency", time.Since(start)).
+// 					Msg("request completed")
+// 			}()
+
+// 			next.ServeHTTP(ww, r)
+// 		}
+// 		return http.HandlerFunc(fn)
+// 	}
+// }
