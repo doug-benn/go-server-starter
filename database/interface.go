@@ -1,48 +1,49 @@
 package database
 
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/doug-benn/go-server-starter/models"
+)
+
 // import (
 // 	"fmt"
 
 // 	"github.com/doug-benn/go-server-starter/models"
 // )
 
-// type PostgresController struct {
-// 	db *PostgresDatabase
-// }
+func (db *postgresDatabase) GetAllComments() ([]models.Comment, error) {
+	comments := []models.Comment{}
+	fmt.Println("Gettings All Data")
 
-// func (p *PostgresController) GetAll() (*[]models.Comment, error) {
-// 	query := `SELECT * FROM comments;`
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 
-// 	comments := []models.Comment{}
-// 	fmt.Println("Gettings All Data")
+	rows, err := db.Sql.QueryContext(ctx, `SELECT * FROM comments;`)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	defer rows.Close()
 
-// 	// ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-// 	// defer cancel()
+	for rows.Next() {
+		comment := models.Comment{}
 
-// 	rows, err := p.db.Sql.Query(query)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
+		if err := rows.Scan(
+			&comment.ID,
+			&comment.Comment,
+		); err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+		fmt.Println(comment)
 
-// 	for rows.Next() {
-// 		comment := &models.Comment{}
-// 		fmt.Println("Gettings All Data")
+		comments = append(comments, comment)
+	}
 
-// 		fmt.Println(comment)
-// 		if err := rows.Scan(
-// 			&comment.ID,
-// 			&comment.Comment,
-// 			&comment.CreatedAt,
-// 			&comment.UpdatedAt,
-// 		); err != nil {
-// 			return nil, err
-// 		}
-// 		fmt.Println(comment)
-// 		comments = append(comments, *comment)
-// 	}
+	fmt.Printf("Data has value %+v\n\n", comments)
+	return comments, nil
 
-// 	fmt.Printf("Data has value %+v\n", comments)
-// 	return &comments, nil
-
-// }
+}

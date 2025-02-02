@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,12 +12,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	sloghttp "github.com/samber/slog-http"
 
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/logger"
 	"github.com/doug-benn/go-server-starter/router"
 	"github.com/patrickmn/go-cache"
+
+	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
+	"github.com/slok/go-http-metrics/middleware"
+	"github.com/slok/go-http-metrics/middleware/std"
 )
 
 func main() {
@@ -29,40 +35,61 @@ func main() {
 var Version string
 
 func run(ctx context.Context, w io.Writer, args []string, version string) error {
+	//Main Server Context
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// TODO Make this an Env Var
-	port := 9080
+	// TODO Make this an Env Var? - Tests will needs to be updated
+	var port uint
+	fs := flag.NewFlagSet(args[0], flag.ExitOnError)
+	fs.SetOutput(w)
+	fs.UintVar(&port, "port", 9200, "port for HTTP Server - default 9200")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
 
-	logger := logger.New(logger.Config{FilePath: "logs/logs.json",
+	logger := logger.New(logger.Config{
+		FilePath:         "logs/logs.json",
 		UserLocalTime:    false,
 		FileMaxSizeInMB:  10,
 		FileMaxAgeInDays: 30,
-		LogLevel:         slog.LevelInfo}, nil, true)
+		LogLevel:         slog.LevelInfo,
+	}, nil, true)
 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
 	dbClient, err := database.NewDatabase(true, true)
 	if err != nil {
-		logger.Error("%s", err)
+		logger.Error(err.Error())
 	}
-	defer dbClient.Stop()
 	dbClient.Start(ctx)
 	logger.InfoContext(ctx, "database connection started")
+
+	//Create metrics middleware.
+	metricsMiddleware := middleware.New(middleware.Config{
+		Recorder: metrics.NewRecorder(metrics.Config{}),
+	})
 
 	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(logger, version, dbClient, cache),
+		Handler:           route(logger, version, dbClient, cache, metricsMiddleware),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errChan := make(chan error, 1)
 	go func() {
-		slog.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
+		logger.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+	}()
+
+	// Serve our metrics.
+	go func() {
+		logger.InfoContext(ctx, "metrics listening on", slog.Uint64("port", uint64(port+1)))
+		if err := http.ListenAndServe(":9201", promhttp.Handler()); err != nil {
 			errChan <- err
 		}
 	}()
@@ -91,10 +118,10 @@ func corsHandler(h http.Handler) http.HandlerFunc {
 	}
 }
 
-func route(logger *slog.Logger, version string, dbInterface database.PostgresService, cache *cache.Cache) http.Handler {
+func route(logger *slog.Logger, version string, dbService database.PostgresService, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, dbInterface, cache))
+	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, dbService, cache))
 
 	// System Routes for debug/logging
 	mux.Handle("GET /health", router.HandleGetHealth(version))
@@ -102,6 +129,10 @@ func route(logger *slog.Logger, version string, dbInterface database.PostgresSer
 
 	handler := sloghttp.Recovery(mux)
 	handler = sloghttp.New(logger)(handler)
+
+	handler = std.Handler("", metricsMiddleware, handler)
+
+	// Wrap main handler with metrics middleware
 
 	return handler
 }

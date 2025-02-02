@@ -17,18 +17,8 @@ import (
 //Postgres Docker Command
 //docker run --name postgres -e POSTGRES_PASSWORD=password -e POSTGRES_DB=test_db -p 5432:5432 -d postgres
 
-// Service represents a service that interacts with a database.
-type PostgresService interface {
-	// Health returns a map of health status information.
-	// The keys and values in the map are service-specific.
-	Health() map[string]string
-
-	Start(context.Context) (<-chan error, error)
-
-	// Close terminates the database connection.
-	// It returns an error if the connection cannot be closed.
-	Stop() error
-}
+//TODO Turn the db start/stop into a controller
+//TODO Split out the service
 
 var (
 	host     = os.Getenv("POSTGRES_HOST")
