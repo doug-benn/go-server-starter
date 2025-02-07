@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultFilePath        = "logs/logs.log"
+	defaultFilePath        = "logs/slog-logs.log"
 	defaultUserLocalTime   = false
 	defaultFileMaxSizeInMB = 10
 	defaultFileMaxBackups  = 3

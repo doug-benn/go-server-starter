@@ -165,14 +165,18 @@ func RequestLogger(next http.Handler) http.Handler {
 				Stringer("url", r.URL).
 				Int("status_code", status).
 				Int("response_size_bytes", size).
+				//Str("bytes_in", r.Header.Get("Content-Length")).
+				//Int("bytes_out", ww.BytesWritten()).
 				Dur("elapsed_ms", duration).
-				Msg("incoming request")
+				Msg("completed request")
+
 		},
 	)
 
-	userAgentHandler := hlog.UserAgentHandler("http_user_agent")
+	//userAgentHandler := hlog.UserAgentHandler("http_user_agent")
+	remoteAddrHandler := hlog.RemoteAddrHandler("remote ip")
 
-	return h(accessHandler(userAgentHandler(next)))
+	return h(accessHandler(remoteAddrHandler(next)))
 }
 
 // func Logger(logger zerolog.Logger) func(http.Handler) http.Handler {

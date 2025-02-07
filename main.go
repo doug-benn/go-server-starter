@@ -83,6 +83,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	}
 
 	errChan := make(chan error, 1)
+	//Main HTTP Server
 	go func() {
 		slogLogger.InfoContext(ctx, "server started", slog.Uint64("port", uint64(port)), slog.String("version", version))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -90,7 +91,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 		}
 	}()
 
-	// Serve our metrics.
+	//Metrics Server
 	go func() {
 		slogLogger.InfoContext(ctx, "metrics listening on", slog.Uint64("port", uint64(port+1)))
 		if err := http.ListenAndServe(":9201", promhttp.Handler()); err != nil {
@@ -134,7 +135,7 @@ func route(logger *slog.Logger, version string, dbService database.PostgresServi
 	mux.Handle("/events", router.HandleEvents())
 
 	handler := sloghttp.Recovery(mux)
-	handler = sloghttp.New(logger)(handler)
+	//handler = sloghttp.New(logger)(handler)
 
 	handler = router.RequestLogger(handler)
 
