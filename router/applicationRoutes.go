@@ -7,14 +7,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/doug-benn/go-server-starter/database"
 	"github.com/patrickmn/go-cache"
 )
 
-func HandleHelloWorld(log *slog.Logger, dbService database.PostgresService, cache *cache.Cache) http.HandlerFunc {
+func HandleHelloWorld(log *slog.Logger, cache *cache.Cache) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 
-		data, _ := dbService.GetAllComments()
+		// data, _ := dbService.GetAllComments()
+		data := ""
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

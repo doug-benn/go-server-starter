@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
 	sloghttp "github.com/samber/slog-http"
 
+	services "github.com/doug-benn/go-server-starter/Services"
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/logger"
 	"github.com/doug-benn/go-server-starter/router"
@@ -63,11 +63,15 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
-	dbClient, err := database.NewDatabase(true, true)
+	postgresConn, err := database.NewDatabase(true, true)
 	if err != nil {
 		slogLogger.Error(err.Error())
 	}
-	dbClient.Start(ctx)
+	postgresConn.Start(ctx)
+
+	postgresRepo := database.NewPostgresTaskRepo(postgresConn.Sql)
+	postgresService := services.NewTaskService(postgresRepo)
+
 	slogLogger.InfoContext(ctx, "database connection started")
 
 	//Create metrics middleware.
@@ -78,7 +82,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	// HTTP Server
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           route(slogLogger, version, dbClient, cache, metricsMiddleware, zeroLogger),
+		Handler:           route(slogLogger, version, postgresService, cache, metricsMiddleware),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -104,7 +108,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		dbClient.Stop()
+		postgresConn.Stop()
 		slog.InfoContext(ctx, "shutting down server")
 	}
 
@@ -113,20 +117,10 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	return server.Shutdown(ctx)
 }
 
-func corsHandler(h http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "OPTIONS" {
-			// handle preflight in here
-		} else {
-			h.ServeHTTP(w, r)
-		}
-	}
-}
-
-func route(logger *slog.Logger, version string, dbService database.PostgresService, cache *cache.Cache, metricsMiddleware middleware.Middleware, zeroLogger zerolog.Logger) http.Handler {
+func route(logger *slog.Logger, version string, service *services.TaskService, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, dbService, cache))
+	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, cache))
 
 	// System Routes for debug/logging
 	mux.Handle("GET /health", router.HandleGetHealth(version))
