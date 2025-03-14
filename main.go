@@ -69,8 +69,7 @@ func run(ctx context.Context, w io.Writer, args []string, version string) error 
 	}
 	postgresConn.Start(ctx)
 
-	postgresRepo := database.NewPostgresTaskRepo(postgresConn.Sql)
-	postgresService := services.NewTaskService(postgresRepo)
+	todoService := services.NewTaskService(postgresConn.Sql)
 
 	slogLogger.InfoContext(ctx, "database connection started")
 

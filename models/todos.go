@@ -1,4 +1,4 @@
-package entity
+package models
 
 import (
 	"errors"
@@ -13,13 +13,7 @@ var (
 	ErrUpdatingTask    = errors.New("failed to update the task in the repository")
 )
 
-type Task struct {
-	id              uuid.UUID
-	taskTitle       string
-	taskDescription string
-	status          string
-}
-
-type TaskRepo interface {
-	GetByID(uuid.UUID) (Task, error)
+type Todo struct {
+	ID          uuid.UUID `json:"id"`
+	Description string    `json:"description"`
 }
