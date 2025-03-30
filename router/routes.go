@@ -3,12 +3,11 @@ package router
 import (
 	"net/http"
 
-	"github.com/doug-benn/go-server-starter/services"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog"
 )
 
-func RegisterRoutes(mux *http.ServeMux, logger zerolog.Logger, dataService services.DataService, cache *cache.Cache) {
+func RegisterRoutes(mux *http.ServeMux, logger zerolog.Logger, cache *cache.Cache) {
 
 	mux.Handle("GET /helloworld", HandleHelloWorld(logger, cache))
 

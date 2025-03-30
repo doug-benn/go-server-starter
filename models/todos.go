@@ -2,8 +2,6 @@ package models
 
 import (
 	"errors"
-
-	"github.com/google/uuid"
 )
 
 var (
@@ -14,6 +12,16 @@ var (
 )
 
 type Todo struct {
-	ID          uuid.UUID `json:"id"`
-	Description string    `json:"description"`
+	ID   int    `json:"id"`
+	Task string `json:"task"`
+}
+
+type Todos []Todo
+
+type TodoService interface {
+	GetTodos() (Todos, error)
+	GetTodoById(id int) (Todo, error)
+	CreateTodo(todo Todo) (Todo, error)
+	UpdateTodo(todo Todo) (Todo, error)
+	DeleteTodo(id int) error
 }

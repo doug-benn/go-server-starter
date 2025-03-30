@@ -6,11 +6,11 @@ Basic HTTP Server Template in Golang
 
 The goal for this project is a simple easy to understand starter HTTP server.
 
+
 Current "Features":
 * Postgres database connection
-  * Health query
-  * Docker Testing Container
-* Logging, slot and zerolog
+  * Test Container
+* Logging - slog and zerolog (currently set up for zerolog - can be changed if the dependancy is a concern)
 * Prometheus metrics server
 
 I want to add:
@@ -28,7 +28,7 @@ doug-benn - [github](www.github.com/doug-benn)
 
 ## License
 
-This project is licensed under GNU General Public License v3.0 - see the LICENSE.md file for details
+This project is licensed under GNU General Public License v3.0 - see the LICENSE file for details
 
 ## Acknowledgments
 

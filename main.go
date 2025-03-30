@@ -17,7 +17,6 @@ import (
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/logging"
 	"github.com/doug-benn/go-server-starter/router"
-	"github.com/doug-benn/go-server-starter/services"
 	"github.com/patrickmn/go-cache"
 
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
@@ -48,8 +47,6 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	}
 	postgresConn.Start(ctx)
 
-	dataService := services.NewDataService(postgresConn.Sql)
-
 	//Create metrics middleware.
 	metricsMiddleware := middleware.New(middleware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{}),
@@ -58,7 +55,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	// HTTP Server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", 9200),
-		Handler:      NewApplication(logger, dataService, cache, metricsMiddleware),
+		Handler:      NewApplication(logger, cache, metricsMiddleware),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -97,9 +94,9 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	return server.Shutdown(ctx)
 }
 
-func NewApplication(logger zerolog.Logger, dataService services.DataService, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
+func NewApplication(logger zerolog.Logger, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
-	router.RegisterRoutes(mux, logger, dataService, cache)
+	router.RegisterRoutes(mux, logger, cache)
 	var handler http.Handler = mux
 
 	handler = router.Recovery(handler, logger)
