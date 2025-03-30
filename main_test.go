@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
-	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/doug-benn/go-server-starter/router"
+	"github.com/rs/zerolog"
 )
 
 // TestMain starts the server and runs all the tests.
@@ -23,19 +24,21 @@ import (
 func TestMain(m *testing.M) {
 	flag.Parse() // NOTE: this is needed to parse args from go test command
 
-	port := func() string { // Get a free port to run the server
-		listener, err := net.Listen("tcp", ":0")
-		if err != nil {
-			log.Fatalf("failed to listen: %v", err)
-		}
-		defer listener.Close()
-		addr := listener.Addr().(*net.TCPAddr)
-		return strconv.Itoa(addr.Port)
-	}()
+	// port := func() string { // Get a free port to run the server
+	// 	listener, err := net.Listen("tcp", ":0")
+	// 	if err != nil {
+	// 		log.Fatalf("failed to listen: %v", err)
+	// 	}
+	// 	defer listener.Close()
+	// 	addr := listener.Addr().(*net.TCPAddr)
+	// 	return strconv.Itoa(addr.Port)
+	// }()
+
+	port := "9200" //Hard Coded Port
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { // Start the server in a goroutine
-		if err := run(ctx, os.Stdout, []string{"test", "--port", port}, "vtest"); err != nil {
+		if err := run(ctx, os.Stdout, []string{"test", "--port", port}); err != nil {
 			cancel()
 			log.Fatal(err)
 		}
@@ -125,7 +128,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			var buffer strings.Builder
-			handler := router.Recovery(http.HandlerFunc(tt.hf), slog.New(slog.NewTextHandler(&buffer, nil)))
+			handler := router.Recovery(http.HandlerFunc(tt.hf), zerolog.New(&buffer))
 
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			rec := httptest.NewRecorder()
@@ -184,64 +187,68 @@ func testContains(tb testing.TB, needle string, haystack string) {
 // 	testContains(t, "Uptime", sb.String())
 // }
 
-// // TestAccessLogMiddleware tests accesslog middleware
-// func TestAccessLogMiddleware(t *testing.T) {
-// 	t.Parallel()
+// TestAccessLogMiddleware tests accesslog middleware
+func TestAccessLogMiddleware(t *testing.T) {
+	t.Parallel()
 
-// 	type record struct {
-// 		Method string `json:"method"`
-// 		Path   string `json:"path"`
-// 		Query  string `json:"query"`
-// 		Status int    `json:"status"`
-// 		body   []byte `json:"-"`
-// 		Bytes  int    `json:"bytes"`
-// 	}
+	type record struct {
+		Method string `json:"method"`
+		Path   string `json:"path"`
+		Query  string `json:"query"`
+		Status int    `json:"status_code"`
+		body   []byte `json:"-"`
+		Bytes  int    `json:"size_bytes"`
+	}
 
-// 	tests := []record{
-// 		{
-// 			Method: "GET",
-// 			Path:   "/test",
-// 			Query:  "?key=value",
-// 			Status: http.StatusOK,
-// 			body:   []byte(`{"hello":"world"}`),
-// 		},
-// 		{
-// 			Method: "POST",
-// 			Path:   "/api",
-// 			Status: http.StatusCreated,
-// 			body:   []byte(`{"id":1}`),
-// 		},
-// 		{
-// 			Method: "DELETE",
-// 			Path:   "/users/1",
-// 			Status: http.StatusNoContent,
-// 		},
-// 	}
+	tests := []record{
+		{
+			Method: "GET",
+			Path:   "/test",
+			Query:  "?key=value",
+			Status: http.StatusOK,
+			body:   []byte(`{"hello":"world"}`),
+		},
+		{
+			Method: "POST",
+			Path:   "/api",
+			Status: http.StatusCreated,
+			body:   []byte(`{"id":1}`),
+		},
+		{
+			Method: "DELETE",
+			Path:   "/users/1",
+			Status: http.StatusNoContent,
+		},
+	}
 
-// 	for _, tt := range tests {
-// 		name := strings.Join([]string{tt.Method, tt.Path, tt.Query, strconv.Itoa(tt.Status)}, " ")
-// 		t.Run(name, func(t *testing.T) {
-// 			t.Parallel()
+	for _, tt := range tests {
+		name := strings.Join([]string{tt.Method, tt.Path, tt.Query, strconv.Itoa(tt.Status)}, " ")
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-// 			var buffer strings.Builder
-// 			handler := router.Accesslog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-// 				w.WriteHeader(tt.Status)
-// 				w.Write(tt.body) //nolint:errcheck
-// 			}), slog.New(slog.NewJSONHandler(&buffer, nil)))
+			var buffer strings.Builder
+			handler := router.Accesslog(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.Status)
+				w.Write(tt.body) //nolint:errcheck
+			}), zerolog.New(&buffer))
 
-// 			req := httptest.NewRequest(tt.Method, tt.Path+tt.Query, bytes.NewReader(tt.body))
-// 			rec := httptest.NewRecorder()
-// 			handler.ServeHTTP(rec, req)
+			req := httptest.NewRequest(tt.Method, tt.Path+tt.Query, bytes.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
 
-// 			var log record
-// 			err := json.NewDecoder(strings.NewReader(buffer.String())).Decode(&log)
-// 			testNil(t, err)
+			fmt.Println(buffer.String())
 
-// 			testEqual(t, tt.Method, log.Method)
-// 			testEqual(t, tt.Path, log.Path)
-// 			testEqual(t, strings.TrimPrefix(tt.Query, "?"), log.Query)
-// 			testEqual(t, len(tt.body), log.Bytes)
-// 			testEqual(t, tt.Status, log.Status)
-// 		})
-// 	}
-// }
+			var log record
+			err := json.NewDecoder(strings.NewReader(buffer.String())).Decode(&log)
+			testNil(t, err)
+
+			fmt.Println(log)
+
+			testEqual(t, tt.Method, log.Method)
+			testEqual(t, tt.Path, log.Path)
+			testEqual(t, strings.TrimPrefix(tt.Query, "?"), log.Query)
+			testEqual(t, len(tt.body), log.Bytes)
+			testEqual(t, tt.Status, log.Status)
+		})
+	}
+}

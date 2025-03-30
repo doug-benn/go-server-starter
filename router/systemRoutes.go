@@ -5,18 +5,17 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
 	"runtime/debug"
 	"time"
 
-	"github.com/doug-benn/go-server-starter/logger"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
 
-func HandleGetHealth(version string) http.HandlerFunc {
+func HandleGetHealth() http.HandlerFunc {
 	type responseBody struct {
 		Version        string    `json:"Version"`
 		Uptime         string    `json:"Uptime"`
@@ -25,7 +24,7 @@ func HandleGetHealth(version string) http.HandlerFunc {
 		DirtyBuild     bool      `json:"DirtyBuild"`
 	}
 
-	res := responseBody{Version: version}
+	res := responseBody{Version: "0.1"}
 	buildInfo, _ := debug.ReadBuildInfo()
 	for _, kv := range buildInfo.Settings {
 		if kv.Value == "" {
@@ -69,32 +68,12 @@ func HandleGetDebug() http.Handler {
 	return mux
 }
 
-// accesslog is a middleware that logs request and response details,
-// including latency, method, path, query parameters, IP address, response status, and bytes sent.
-func Accesslog(next http.Handler, log *slog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		wr := responseRecorder{ResponseWriter: w}
-
-		next.ServeHTTP(&wr, r)
-
-		log.InfoContext(r.Context(), "accessed",
-			slog.String("latency", time.Since(start).String()),
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.String("query", r.URL.RawQuery),
-			slog.String("ip", r.RemoteAddr),
-			slog.Int("status", wr.status),
-			slog.Int("bytes", wr.numBytes))
-	})
-}
-
 // recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
 // It must be the last middleware in the chain to ensure it captures all panics.
-func Recovery(next http.Handler, log *slog.Logger) http.Handler {
+func Recovery(next http.Handler, logger zerolog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wr := responseRecorder{ResponseWriter: w}
 		defer func() {
+
 			err := recover()
 			if err == nil {
 				return
@@ -108,65 +87,37 @@ func Recovery(next http.Handler, log *slog.Logger) http.Handler {
 			stack := make([]byte, 1024)
 			n := runtime.Stack(stack, true)
 
-			log.ErrorContext(r.Context(), "panic!",
-				slog.Any("error", err),
-				slog.String("stack", string(stack[:n])),
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-				slog.String("query", r.URL.RawQuery),
-				slog.String("ip", r.RemoteAddr))
-
-			if wr.status > 0 {
-				// response was already sent, nothing we can do
-				return
-			}
+			logger.Error().
+				Ctx(r.Context()).
+				Any("panic!", err).
+				Str("stack", string(stack[:n])).
+				Str("stack", string(stack[:n])).
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Str("query", r.URL.RawQuery).
+				Str("ip", r.RemoteAddr).
+				Msg("panic!")
 
 			// send error response
 			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		}()
-		next.ServeHTTP(&wr, r)
+		next.ServeHTTP(w, r)
 	})
 }
 
-// responseRecorder is a wrapper around [http.ResponseWriter] that records the status and bytes written during the response.
-// It implements the [http.ResponseWriter] interface by embedding the original ResponseWriter.
-type responseRecorder struct {
-	http.ResponseWriter
-	status   int
-	numBytes int
-}
+func Accesslog(next http.Handler, logger zerolog.Logger) http.Handler {
 
-// Header implements the [http.ResponseWriter] interface.
-func (re *responseRecorder) Header() http.Header {
-	return re.ResponseWriter.Header()
-}
-
-// Write implements the [http.ResponseWriter] interface.
-func (re *responseRecorder) Write(b []byte) (int, error) {
-	re.numBytes += len(b)
-	return re.ResponseWriter.Write(b)
-}
-
-// WriteHeader implements the [http.ResponseWriter] interface.
-func (re *responseRecorder) WriteHeader(statusCode int) {
-	re.status = statusCode
-	re.ResponseWriter.WriteHeader(statusCode)
-}
-
-func RequestLogger(next http.Handler) http.Handler {
-	l := logger.Get()
-
-	h := hlog.NewHandler(l)
+	h := hlog.NewHandler(logger)
 
 	accessHandler := hlog.AccessHandler(
 		func(r *http.Request, status, size int, duration time.Duration) {
 			hlog.FromRequest(r).Info().
 				Str("method", r.Method).
-				Stringer("url", r.URL).
+				//Stringer("url", r.URL).
+				Str("path", r.URL.Path).
+				Str("query", r.URL.RawQuery).
 				Int("status_code", status).
-				Int("response_size_bytes", size).
-				//Str("bytes_in", r.Header.Get("Content-Length")).
-				//Int("bytes_out", ww.BytesWritten()).
+				Int("size_bytes", size).
 				Dur("elapsed_ms", duration).
 				Msg("completed request")
 

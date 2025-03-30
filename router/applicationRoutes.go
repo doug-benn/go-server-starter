@@ -3,14 +3,14 @@ package router
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/patrickmn/go-cache"
+	"github.com/rs/zerolog"
 )
 
-func HandleHelloWorld(log *slog.Logger, cache *cache.Cache) http.HandlerFunc {
+func HandleHelloWorld(logger zerolog.Logger, cache *cache.Cache) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 
 		// data, _ := dbService.GetAllComments()
