@@ -1,23 +1,27 @@
 package services
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/models"
-	_ "github.com/lib/pq"
 )
 
 type todoRepository struct {
-	db *sql.DB
+	db *database.PostgresDatabase
 }
 
-func NewTodoRepository(db *sql.DB) models.TodoService {
+func NewTodoRepository(db *database.PostgresDatabase) models.TodoService {
 	return &todoRepository{db: db}
 }
 
 func (r *todoRepository) GetTodos() (models.Todos, error) {
-	rows, err := r.db.Query("SELECT id, task FROM todos")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	rows, err := r.db.Pool.Query(ctx, "SELECT id, task FROM todos")
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +45,10 @@ func (r *todoRepository) GetTodos() (models.Todos, error) {
 }
 
 func (r *todoRepository) GetTodoById(id int) (models.Todo, error) {
-	row := r.db.QueryRow("SELECT id, task FROM todos WHERE id = $1", id)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	row := r.db.Pool.QueryRow(ctx, "SELECT id, task FROM todos WHERE id = $1", id)
 	if row == nil {
 		return models.Todo{}, fmt.Errorf("todo with id %d not found", id)
 	}
@@ -55,23 +62,22 @@ func (r *todoRepository) GetTodoById(id int) (models.Todo, error) {
 }
 
 func (r *todoRepository) CreateTodo(todo models.Todo) (models.Todo, error) {
-	result, err := r.db.Exec("INSERT INTO todos (task) VALUES ($1)", todo.Task)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := r.db.Pool.QueryRow(ctx, "INSERT INTO todos (task) VALUES ($1) RETURNING id", todo.Task).Scan(&todo.ID)
 	if err != nil {
 		return models.Todo{}, err
 	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return models.Todo{}, err
-	}
-
-	todo.ID = int(id)
 
 	return todo, nil
 }
 
 func (r *todoRepository) UpdateTodo(todo models.Todo) (models.Todo, error) {
-	_, err := r.db.Exec("UPDATE todos SET task=$1 WHERE id=$2", todo.Task, todo.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := r.db.Pool.Exec(ctx, "UPDATE todos SET task=$1 WHERE id=$2", todo.Task, todo.ID)
 	if err != nil {
 		return models.Todo{}, err
 	}
@@ -80,7 +86,10 @@ func (r *todoRepository) UpdateTodo(todo models.Todo) (models.Todo, error) {
 }
 
 func (r *todoRepository) DeleteTodo(id int) error {
-	_, err := r.db.Exec("DELETE FROM todos WHERE id = $1", id)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := r.db.Pool.Exec(ctx, "DELETE FROM todos WHERE id = $1", id)
 	if err != nil {
 		return err
 	}

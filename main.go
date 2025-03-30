@@ -41,11 +41,11 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
-	postgresConn, err := database.NewDatabase(true, true)
+	postgresDatabase, err := database.NewDatabase(ctx, logger)
 	if err != nil {
 		logger.Error().AnErr("database err", err)
 	}
-	postgresConn.Start(ctx)
+	//postgresDatabase.Stop()
 
 	//Create metrics middleware.
 	metricsMiddleware := middleware.New(middleware.Config{
@@ -84,7 +84,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		postgresConn.Stop()
+		postgresDatabase.Stop()
 		slog.InfoContext(ctx, "shutting down server")
 		logger.Info().Msg("shutting down server")
 	}
