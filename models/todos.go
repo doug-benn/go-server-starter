@@ -17,11 +17,3 @@ type Todo struct {
 }
 
 type Todos []Todo
-
-type TodoService interface {
-	GetTodos() (Todos, error)
-	GetTodoById(id int) (Todo, error)
-	CreateTodo(todo Todo) (Todo, error)
-	UpdateTodo(todo Todo) (Todo, error)
-	DeleteTodo(id int) error
-}

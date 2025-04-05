@@ -22,6 +22,11 @@ I want to add:
 ## 💡Usage
 Template/Clone/Fork the repository and enjoy
 
+### Folder
+- Models: "Things" - also known as entities
+- Repository: Database related logic - can take in a transaction
+- Services: Appliation logic e.g. Caching, starting a database transaction
+
 ## Authors
 
 doug-benn - [github](www.github.com/doug-benn)

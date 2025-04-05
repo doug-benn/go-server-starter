@@ -1,4 +1,4 @@
-package services
+package repository
 
 import (
 	"context"
@@ -9,15 +9,23 @@ import (
 	"github.com/doug-benn/go-server-starter/models"
 )
 
-type todoRepository struct {
+type TodoRepository interface {
+	GetTodos() (models.Todos, error)
+	GetTodoById(id int) (*models.Todo, error)
+	CreateTodo(todo *models.Todo) (*models.Todo, error)
+	UpdateTodo(todo *models.Todo) (*models.Todo, error)
+	DeleteTodo(id int) error
+}
+
+type DatabaseTodoRepository struct {
 	db *database.PostgresDatabase
 }
 
-func NewTodoRepository(db *database.PostgresDatabase) models.TodoService {
-	return &todoRepository{db: db}
+func NewTodoRepository(db *database.PostgresDatabase) *DatabaseTodoRepository {
+	return &DatabaseTodoRepository{db: db}
 }
 
-func (r *todoRepository) GetTodos() (models.Todos, error) {
+func (r *DatabaseTodoRepository) GetTodos() (models.Todos, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -44,7 +52,7 @@ func (r *todoRepository) GetTodos() (models.Todos, error) {
 	return todos, nil
 }
 
-func (r *todoRepository) GetTodoById(id int) (models.Todo, error) {
+func (r *DatabaseTodoRepository) GetTodoById(id int) (models.Todo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -61,7 +69,7 @@ func (r *todoRepository) GetTodoById(id int) (models.Todo, error) {
 	return todo, nil
 }
 
-func (r *todoRepository) CreateTodo(todo models.Todo) (models.Todo, error) {
+func (r *DatabaseTodoRepository) CreateTodo(todo models.Todo) (models.Todo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -73,7 +81,7 @@ func (r *todoRepository) CreateTodo(todo models.Todo) (models.Todo, error) {
 	return todo, nil
 }
 
-func (r *todoRepository) UpdateTodo(todo models.Todo) (models.Todo, error) {
+func (r *DatabaseTodoRepository) UpdateTodo(todo models.Todo) (models.Todo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -85,7 +93,7 @@ func (r *todoRepository) UpdateTodo(todo models.Todo) (models.Todo, error) {
 	return todo, nil
 }
 
-func (r *todoRepository) DeleteTodo(id int) error {
+func (r *DatabaseTodoRepository) DeleteTodo(id int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
