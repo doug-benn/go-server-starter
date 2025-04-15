@@ -45,7 +45,6 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	if err != nil {
 		logger.Error().AnErr("database err", err)
 	}
-	//postgresDatabase.Stop()
 
 	//Create metrics middleware.
 	metricsMiddleware := middleware.New(middleware.Config{
