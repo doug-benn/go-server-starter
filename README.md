@@ -1,4 +1,4 @@
-# Go Server Starter - 🚨Still work in progress! 🚨
+# Go Server Starter - 🚨 Work in progress! 🚨
 
 Basic HTTP Server Template in Golang
 
@@ -17,7 +17,10 @@ I want to add:
 * Docker Compose
   * Including Grafana & Prometheus
 * SQLite Support
-* Websockets and SSE
+* Websockets and SSE Event Broker
+* Switch back to slogger
+* Access Log & Recovery testing
+* Postgres Listener
 
 ## 💡Usage
 Template/Clone/Fork the repository and enjoy

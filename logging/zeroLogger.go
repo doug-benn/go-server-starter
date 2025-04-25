@@ -13,6 +13,7 @@ func NewZeroLogger(options ...func(l *LoggingConfig)) zerolog.Logger {
 
 	config := LoggingConfig{
 		ConsoleOutput: true,
+		PrettyConsole: false,
 		FileOutput:    true,
 		LogLevel:      1,
 		TimeFormat:    time.RFC3339,
@@ -36,12 +37,18 @@ func NewZeroLogger(options ...func(l *LoggingConfig)) zerolog.Logger {
 	outputs := []io.Writer{}
 
 	if config.ConsoleOutput {
-		var consoleOutput io.Writer = zerolog.ConsoleWriter{
-			Out:        os.Stdout,
-			TimeFormat: time.RFC3339,
-			PartsOrder: config.PartsOrder,
+		if config.PrettyConsole {
+			var prettyOutput io.Writer = zerolog.ConsoleWriter{
+				Out:        os.Stdout,
+				TimeFormat: time.RFC3339,
+				PartsOrder: config.PartsOrder,
+			}
+			outputs = append(outputs, prettyOutput)
+		} else {
+			var consoleOutput io.Writer = os.Stdout
+			zerolog.TimeFieldFormat = config.TimeFormat
+			outputs = append(outputs, consoleOutput)
 		}
-		outputs = append(outputs, consoleOutput)
 	}
 
 	if config.FileOutput {

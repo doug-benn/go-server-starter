@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -43,7 +42,8 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	// Database Connection
 	postgresDatabase, err := database.NewDatabase(ctx, logger)
 	if err != nil {
-		logger.Error().AnErr("database err", err)
+		logger.Error().Err(err).Msg("database error")
+		return err
 	}
 
 	//Create metrics middleware.
@@ -60,6 +60,8 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 		WriteTimeout: 30 * time.Second,
 	}
 
+	metrics := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", 9201), Handler: promhttp.Handler()}
+
 	errChan := make(chan error, 1)
 
 	//Main HTTP Server
@@ -73,7 +75,7 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	//Metrics Server
 	go func() {
 		logger.Info().Int("port", 9201).Msg("metrics started")
-		if err := http.ListenAndServe("127.0.0.1:9201", promhttp.Handler()); err != nil {
+		if err := metrics.ListenAndServe(); err != nil {
 			errChan <- err
 		}
 	}()
@@ -84,7 +86,6 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 		return err
 	case <-ctx.Done():
 		postgresDatabase.Stop()
-		slog.InfoContext(ctx, "shutting down server")
 		logger.Info().Msg("shutting down server")
 	}
 
@@ -95,6 +96,8 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 
 func NewApplication(logger zerolog.Logger, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
 	mux := http.NewServeMux()
+
+	//Register all routes
 	router.RegisterRoutes(mux, logger, cache)
 	var handler http.Handler = mux
 

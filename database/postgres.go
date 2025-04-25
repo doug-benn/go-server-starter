@@ -37,11 +37,11 @@ type PostgresDatabase struct {
 func NewDatabase(ctx context.Context, logger zerolog.Logger) (*PostgresDatabase, error) {
 
 	connStr := "postgresql://" + username + ":" + password +
-		"@" + host + ":" + port + "/" + database + "?sslmode=disable&connect_timeout=1"
+		"@" + host + ":" + port + "/" + database + "?sslmode=disable&connect_timeout=1&application_name=go-server-starter"
 
 	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		logger.Error().AnErr("error", err).Msg("Error parsing pool config")
+		logger.Error().Err(err).Msg("Error parsing pool config")
 		return nil, err
 	}
 
@@ -52,6 +52,7 @@ func NewDatabase(ctx context.Context, logger zerolog.Logger) (*PostgresDatabase,
 	config.HealthCheckPeriod = 2 * time.Minute
 
 	var pool *pgxpool.Pool
+
 	pgOnce.Do(func() {
 		pool, err = pgxpool.NewWithConfig(ctx, config)
 	})
@@ -59,8 +60,9 @@ func NewDatabase(ctx context.Context, logger zerolog.Logger) (*PostgresDatabase,
 	// Verify the connection
 	fails := 0
 	const maxFails = 3
-	const sleepDuration = 200 * time.Millisecond
+	const sleepDuration = 20 * time.Second
 	var totalTryTime time.Duration
+
 	for {
 		err = pool.Ping(ctx)
 		if err == nil {

@@ -6,15 +6,16 @@ import (
 	"errors"
 	"time"
 
+	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/models"
 	_ "github.com/lib/pq"
 )
 
 type PostgresTodoRepository struct {
-	db *sql.DB
+	db *database.PostgresDatabase
 }
 
-func NewPostgresTodoRepository(db *sql.DB) *PostgresTodoRepository {
+func NewPostgresTodoRepository(db *database.PostgresDatabase) *PostgresTodoRepository {
 	return &PostgresTodoRepository{
 		db: db,
 	}
@@ -31,7 +32,7 @@ func (r *PostgresTodoRepository) Create(ctx context.Context, todo *models.Todo) 
 	todo.CreatedAt = now
 	todo.UpdatedAt = now
 
-	err := r.db.QueryRowContext(
+	err := r.db.Pool.QueryRow(
 		ctx,
 		query,
 		todo.Title,
@@ -52,7 +53,7 @@ func (r *PostgresTodoRepository) GetByID(ctx context.Context, id int64) (*models
 	`
 
 	todo := &models.Todo{}
-	err := r.db.QueryRowContext(ctx, query, id).Scan(
+	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
 		&todo.ID,
 		&todo.Title,
 		&todo.Description,
@@ -78,7 +79,7 @@ func (r *PostgresTodoRepository) GetAll(ctx context.Context) (models.Todos, erro
 		ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.QueryContext(ctx, query)
+	rows, err := r.db.Pool.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +118,7 @@ func (r *PostgresTodoRepository) Update(ctx context.Context, todo *models.Todo) 
 
 	todo.UpdatedAt = time.Now()
 
-	_, err := r.db.ExecContext(
+	_, err := r.db.Pool.Exec(
 		ctx,
 		query,
 		todo.Title,
@@ -136,7 +137,7 @@ func (r *PostgresTodoRepository) Delete(ctx context.Context, id int64) error {
 		WHERE id = $1
 	`
 
-	_, err := r.db.ExecContext(ctx, query, id)
+	_, err := r.db.Pool.Exec(ctx, query, id)
 	return err
 }
 
@@ -148,6 +149,6 @@ func (r *PostgresTodoRepository) MarkAsCompleted(ctx context.Context, id int64) 
 	`
 
 	now := time.Now()
-	_, err := r.db.ExecContext(ctx, query, now, id)
+	_, err := r.db.Pool.Exec(ctx, query, now, id)
 	return err
 }

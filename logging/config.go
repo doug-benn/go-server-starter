@@ -3,6 +3,7 @@ package logging
 type LoggingConfig struct {
 	ConsoleOutput bool
 	FileOutput    bool
+	PrettyConsole bool
 	LogLevel      int
 	TimeFormat    string
 	PartsOrder    []string
