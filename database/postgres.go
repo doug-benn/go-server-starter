@@ -3,99 +3,218 @@ package database
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/doug-benn/go-server-starter/utilities"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/rs/zerolog"
 )
 
-//Postgres Docker Command
-//docker run --name postgres -e POSTGRES_PASSWORD=password -e POSTGRES_DB=test_db -p 5432:5432 -d postgres
-
-// Note: change these and also change the tests
 var (
-	host     = os.Getenv("POSTGRES_HOST")
-	port     = os.Getenv("POSTGRES_PORT")
-	username = os.Getenv("POSTGRES_USER")
-	password = os.Getenv("POSTGRES_PASSWORD")
-	database = os.Getenv("POSTGRES_DB")
+	pgOnce sync.Once
+	pgPool *pgxpool.Pool
+	pgErr  error
 )
 
-var pgOnce sync.Once
-
-// Database is the Postgres implementation of the database store.
-type PostgresDatabase struct {
-	Pool    *pgxpool.Pool
-	Running bool
-	Logger  zerolog.Logger
+// Config holds database configuration parameters
+type postgrseConfig struct {
+	Host              string
+	Port              string
+	Username          string
+	Password          string
+	Database          string
+	SSLMode           string
+	ConnectTimeout    time.Duration
+	ApplicationName   string
+	MaxConns          int32
+	MinConns          int32
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
+	HealthCheckPeriod time.Duration
+	MaxRetries        int
+	RetryDelay        time.Duration
 }
 
-// NewDatabase creates a database connection pool in DB and pings the database.
-func NewDatabase(ctx context.Context, logger zerolog.Logger) (*PostgresDatabase, error) {
+// NewConfig returns a configuration with sensible defaults for a locally host postgres database
+func NewConfig() postgrseConfig {
+	return postgrseConfig{
+		Host:              utilities.GetEnvOrDefault("POSTGRES_HOST", "localhost"),
+		Port:              utilities.GetEnvOrDefault("POSTGRES_PORT", "5432"),
+		Username:          utilities.GetEnvOrDefault("POSTGRES_USER", "postgres"),
+		Password:          utilities.GetEnvOrDefault("POSTGRES_PASSWORD", "password"),
+		Database:          utilities.GetEnvOrDefault("POSTGRES_DB", "testdb"),
+		SSLMode:           utilities.GetEnvOrDefault("POSTGRES_SSL_MODE", "disable"),
+		ConnectTimeout:    5 * time.Second,
+		ApplicationName:   utilities.GetEnvOrDefault("APPLICATION_NAME", "go-server-starter"),
+		MaxConns:          30,
+		MinConns:          1,
+		MaxConnLifetime:   time.Hour,
+		MaxConnIdleTime:   30 * time.Minute,
+		HealthCheckPeriod: 1 * time.Minute,
+		MaxRetries:        3,
+		RetryDelay:        2 * time.Second,
+	}
+}
 
-	connStr := "postgresql://" + username + ":" + password +
-		"@" + host + ":" + port + "/" + database + "?sslmode=disable&connect_timeout=1&application_name=go-server-starter"
+// PostgresDatabase is the Postgres implementation of the database store.
+type PostgresDatabase struct {
+	pool   *pgxpool.Pool
+	config postgrseConfig
+	logger zerolog.Logger
+	mu     sync.RWMutex
+	closed bool
+}
+
+// NewDatabase creates a database connection pool and pings the database.
+func NewDatabase(ctx context.Context, logger zerolog.Logger, config postgrseConfig) (*PostgresDatabase, error) {
+
+	db := &PostgresDatabase{
+		config: config,
+		logger: logger,
+	}
+
+	// Initialize the connection pool using singleton pattern
+	pgOnce.Do(func() {
+		pgPool, pgErr = db.initPool(ctx)
+	})
+
+	if pgErr != nil {
+		return nil, fmt.Errorf("failed to initialize database pool: %w", pgErr)
+	}
+
+	if pgPool == nil {
+		return nil, fmt.Errorf("database pool is nil after initialization")
+	}
+
+	db.pool = pgPool
+
+	// Test the connection with retry logic
+	if err := db.pingWithRetry(ctx); err != nil {
+		return nil, fmt.Errorf("failed to establish database connection: %w", err)
+	}
+
+	logger.Info().Msg("successfully connected to database")
+	return db, nil
+}
+
+// initPool creates and configures the connection pool
+func (db *PostgresDatabase) initPool(ctx context.Context) (*pgxpool.Pool, error) {
+
+	connStr := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=%s&connect_timeout=%d&application_name=%s",
+		db.config.Username,
+		db.config.Password,
+		db.config.Host,
+		db.config.Port,
+		db.config.Database,
+		db.config.SSLMode,
+		int(db.config.ConnectTimeout.Seconds()),
+		db.config.ApplicationName,
+	)
 
 	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		logger.Error().Err(err).Msg("Error parsing pool config")
-		return nil, err
+		db.logger.Error().Err(err).Msg("error parsing pool config")
+		return nil, fmt.Errorf("failed to parse pool config: %w", err)
 	}
 
-	config.MaxConns = 10
-	config.MinConns = 2
-	config.MaxConnLifetime = 30 * time.Minute
-	config.MaxConnIdleTime = 10 * time.Minute
-	config.HealthCheckPeriod = 2 * time.Minute
+	// Configure connection pool settings
+	config.MaxConns = db.config.MaxConns
+	config.MinConns = db.config.MinConns
+	config.MaxConnLifetime = db.config.MaxConnLifetime
+	config.MaxConnIdleTime = db.config.MaxConnIdleTime
+	config.HealthCheckPeriod = db.config.HealthCheckPeriod
 
-	var pool *pgxpool.Pool
-
-	pgOnce.Do(func() {
-		pool, err = pgxpool.NewWithConfig(ctx, config)
-	})
-
-	// Verify the connection
-	fails := 0
-	const maxFails = 3
-	const sleepDuration = 20 * time.Second
-	var totalTryTime time.Duration
-
-	for {
-		err = pool.Ping(ctx)
-		if err == nil {
-			break
-		} else if ctx.Err() != nil {
-			return nil, fmt.Errorf("pinging database: %w", err)
-		}
-		logger.Error().Err(err).Msg("unable to ping database")
-		fails++
-		if fails == maxFails {
-			return nil, fmt.Errorf("failed connecting to database after %d tries in %s: %w", fails, totalTryTime, err)
-		}
-		time.Sleep(sleepDuration)
-		totalTryTime += sleepDuration
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
-	logger.Info().Msg("Successfully connected to database")
-	return &PostgresDatabase{Pool: pool, Running: true, Logger: logger}, nil
+	return pool, nil
 }
 
-// Stop stops the database and closes the connection.
-func (db *PostgresDatabase) Stop() (err error) {
+// pingWithRetry attempts to ping the database with exponential backoff
+func (db *PostgresDatabase) pingWithRetry(ctx context.Context) error {
+	var lastErr error
+	delay := db.config.RetryDelay
 
-	db.Logger.Info().Msg("closing database pool")
+	for attempt := 1; attempt <= db.config.MaxRetries; attempt++ {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled during database ping: %w", ctx.Err())
+		default:
+		}
 
-	if !db.Running {
-		db.Logger.Error().Msg("database is not running")
-		return fmt.Errorf("%s", "database is not running")
+		if err := db.pool.Ping(ctx); err == nil {
+			return nil // Success
+		} else {
+			lastErr = err
+			db.logger.Warn().
+				Err(err).
+				Int("attempt", attempt).
+				Int("max_attempts", db.config.MaxRetries).
+				Dur("retry_delay", delay).
+				Msg("database ping failed, retrying")
+
+			if attempt < db.config.MaxRetries {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("context cancelled during retry delay: %w", ctx.Err())
+				case <-time.After(delay):
+					delay *= 2 // Exponential backoff
+				}
+			}
+		}
 	}
 
-	db.Pool.Close()
-	db.Logger.Info().Msg("closing database connection")
+	return fmt.Errorf("failed to ping database after %d attempts: %w", db.config.MaxRetries, lastErr)
+}
 
-	db.Running = false
+// Pool returns the underlying connection pool (read-only access)
+func (db *PostgresDatabase) Pool() *pgxpool.Pool {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return db.pool
+}
+
+// IsRunning returns true if the database connection is active
+func (db *PostgresDatabase) IsRunning() bool {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return !db.closed && db.pool != nil
+}
+
+// Ping tests the database connection
+func (db *PostgresDatabase) Ping(ctx context.Context) error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if db.closed {
+		return fmt.Errorf("database connection is closed")
+	}
+
+	return db.pool.Ping(ctx)
+}
+
+// Close closes the connection pool
+func (db *PostgresDatabase) Close() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.closed {
+		db.logger.Warn().Msg("database connection already closed")
+		return nil
+	}
+
+	db.logger.Info().Msg("closing database connection pool")
+
+	if db.pool != nil {
+		db.pool.Close()
+	}
+
+	db.closed = true
+	db.logger.Info().Msg("database connection pool closed successfully")
+
 	return nil
 }

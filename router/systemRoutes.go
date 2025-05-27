@@ -2,17 +2,11 @@ package router
 
 import (
 	"encoding/json"
-	"errors"
 	"expvar"
-	"fmt"
 	"net/http"
 	"net/http/pprof"
-	"runtime"
 	"runtime/debug"
 	"time"
-
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/hlog"
 )
 
 func HandleGetHealth() http.HandlerFunc {
@@ -66,66 +60,4 @@ func HandleGetDebug() http.Handler {
 	// NOTE: this route is same as defined in expvar init function
 	mux.Handle("/debug/vars", expvar.Handler())
 	return mux
-}
-
-// recovery is a middleware that recovers from panics during HTTP handler execution and logs the error details.
-// It must be the last middleware in the chain to ensure it captures all panics.
-func Recovery(next http.Handler, logger zerolog.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-
-			err := recover()
-			if err == nil {
-				return
-			}
-
-			if err, ok := err.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-				// Handle the abort gracefully
-				return
-			}
-
-			stack := make([]byte, 1024)
-			n := runtime.Stack(stack, true)
-
-			logger.Error().
-				Ctx(r.Context()).
-				Any("panic!", err).
-				Str("stack", string(stack[:n])).
-				Str("stack", string(stack[:n])).
-				Str("method", r.Method).
-				Str("path", r.URL.Path).
-				Str("query", r.URL.RawQuery).
-				Str("ip", r.RemoteAddr).
-				Msg("panic!")
-
-			// send error response
-			http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
-		}()
-		next.ServeHTTP(w, r)
-	})
-}
-
-func Accesslog(next http.Handler, logger zerolog.Logger) http.Handler {
-
-	h := hlog.NewHandler(logger)
-
-	accessHandler := hlog.AccessHandler(
-		func(r *http.Request, status, size int, duration time.Duration) {
-			hlog.FromRequest(r).Info().
-				Str("method", r.Method).
-				//Stringer("url", r.URL).
-				Str("path", r.URL.Path).
-				Str("query", r.URL.RawQuery).
-				Int("status_code", status).
-				Int("size_bytes", size).
-				Dur("elapsed_ms", duration).
-				Msg("completed request")
-
-		},
-	)
-
-	//userAgentHandler := hlog.UserAgentHandler("http_user_agent")
-	remoteAddrHandler := hlog.RemoteAddrHandler("remote ip")
-
-	return h(accessHandler(remoteAddrHandler(next)))
 }

@@ -32,7 +32,7 @@ func (r *PostgresTodoRepository) Create(ctx context.Context, todo *models.Todo) 
 	todo.CreatedAt = now
 	todo.UpdatedAt = now
 
-	err := r.db.Pool.QueryRow(
+	err := r.db.Pool().QueryRow(
 		ctx,
 		query,
 		todo.Title,
@@ -53,7 +53,7 @@ func (r *PostgresTodoRepository) GetByID(ctx context.Context, id int64) (*models
 	`
 
 	todo := &models.Todo{}
-	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
+	err := r.db.Pool().QueryRow(ctx, query, id).Scan(
 		&todo.ID,
 		&todo.Title,
 		&todo.Description,
@@ -79,7 +79,7 @@ func (r *PostgresTodoRepository) GetAll(ctx context.Context) (models.Todos, erro
 		ORDER BY created_at DESC
 	`
 
-	rows, err := r.db.Pool.Query(ctx, query)
+	rows, err := r.db.Pool().Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (r *PostgresTodoRepository) Update(ctx context.Context, todo *models.Todo) 
 
 	todo.UpdatedAt = time.Now()
 
-	_, err := r.db.Pool.Exec(
+	_, err := r.db.Pool().Exec(
 		ctx,
 		query,
 		todo.Title,
@@ -137,7 +137,7 @@ func (r *PostgresTodoRepository) Delete(ctx context.Context, id int64) error {
 		WHERE id = $1
 	`
 
-	_, err := r.db.Pool.Exec(ctx, query, id)
+	_, err := r.db.Pool().Exec(ctx, query, id)
 	return err
 }
 
@@ -149,6 +149,6 @@ func (r *PostgresTodoRepository) MarkAsCompleted(ctx context.Context, id int64) 
 	`
 
 	now := time.Now()
-	_, err := r.db.Pool.Exec(ctx, query, now, id)
+	_, err := r.db.Pool().Exec(ctx, query, now, id)
 	return err
 }
