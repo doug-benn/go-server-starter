@@ -2,11 +2,13 @@ package router
 
 import (
 	"encoding/json"
-	"expvar"
 	"net/http"
 	"net/http/pprof"
 	"runtime/debug"
 	"time"
+
+	"github.com/grafana/pyroscope-go"
+	pyroscope_pprof "github.com/grafana/pyroscope-go/http/pprof"
 )
 
 func HandleGetHealth() http.HandlerFunc {
@@ -46,18 +48,24 @@ func HandleGetHealth() http.HandlerFunc {
 	}
 }
 
-// handleGetDebug returns an [http.Handler] for debug routes, including pprof and expvar routes.
+// HandleGetDebug is a debug/profiling route for pyroscope
 func HandleGetDebug() http.Handler {
 	mux := http.NewServeMux()
 
-	// NOTE: this route is same as defined in net/http/pprof init function
+	// Starting pyroscope profiler
+	pyroscope.Start(pyroscope.Config{
+		ApplicationName: "go-server-starter",
+		ServerAddress:   "http://localhost:4040",
+	})
+
+	// Standard pprof routes (copied from /net/http/pprof)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-	// NOTE: this route is same as defined in expvar init function
-	mux.Handle("/debug/vars", expvar.Handler())
+	// This route is special: note that we're using Pyroscope handler here
+	mux.HandleFunc("/debug/pprof/profile", pyroscope_pprof.Profile)
+
 	return mux
 }

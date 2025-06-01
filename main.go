@@ -11,16 +11,16 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog"
+	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
+	mmiddleware "github.com/slok/go-http-metrics/middleware"
+	"github.com/slok/go-http-metrics/middleware/std"
 
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/logging"
 	"github.com/doug-benn/go-server-starter/router"
 	"github.com/patrickmn/go-cache"
 
-	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
-	"github.com/slok/go-http-metrics/middleware"
-	"github.com/slok/go-http-metrics/middleware/std"
+	"github.com/doug-benn/go-server-starter/middleware"
 )
 
 func main() {
@@ -34,27 +34,42 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logger := logging.NewZeroLogger()
+	logger := logging.NewZeroLogger(logging.NewLoggingConfig())
 	logger.Info().Msg("Zero Logger initialized")
 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
-	postgresDatabase, err := database.NewDatabase(ctx, logger)
+	postgresDatabase, err := database.NewDatabase(ctx, logger, database.NewConfig())
 	if err != nil {
 		logger.Error().Err(err).Msg("database error")
-		return err
 	}
 
-	//Create metrics middleware.
-	metricsMiddleware := middleware.New(middleware.Config{
-		Recorder: metrics.NewRecorder(metrics.Config{}),
-	})
+	mux := http.NewServeMux()
+
+	//Register all routes
+	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, cache))
+	mux.Handle("/events", router.HandleEvents())
+
+	// System Routes for debugging
+	mux.Handle("GET /health", router.HandleGetHealth())
+	mux.Handle("/debug/", router.HandleGetDebug())
+
+	//middleware chain
+	chain := middleware.New(
+		middleware.Recovery(logger),
+		middleware.AccessLogger(logger),
+		std.HandlerProvider("", mmiddleware.New(mmiddleware.Config{
+			Recorder: metrics.NewRecorder(metrics.Config{}),
+		}))).Build(mux)
+
+	//Metrics Handler
+	//handler = std.Handler("", metricsMiddleware, handler)
 
 	// HTTP Server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", 9200),
-		Handler:      NewApplication(logger, cache, metricsMiddleware),
+		Handler:      chain,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -85,27 +100,11 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		postgresDatabase.Stop()
+		postgresDatabase.Close()
 		logger.Info().Msg("shutting down server")
 	}
 
 	ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
-}
-
-func NewApplication(logger zerolog.Logger, cache *cache.Cache, metricsMiddleware middleware.Middleware) http.Handler {
-	mux := http.NewServeMux()
-
-	//Register all routes
-	router.RegisterRoutes(mux, logger, cache)
-	var handler http.Handler = mux
-
-	handler = router.Recovery(handler, logger)
-	handler = router.Accesslog(handler, logger)
-
-	//Metrics Handler
-	handler = std.Handler("", metricsMiddleware, handler)
-
-	return handler
 }

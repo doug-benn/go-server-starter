@@ -9,30 +9,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-func NewZeroLogger(options ...func(l *LoggingConfig)) zerolog.Logger {
-
-	config := LoggingConfig{
-		ConsoleOutput: true,
-		PrettyConsole: false,
-		FileOutput:    true,
-		LogLevel:      1,
-		TimeFormat:    time.RFC3339,
-		PartsOrder: []string{
-			zerolog.LevelFieldName,
-			zerolog.TimestampFieldName,
-			zerolog.MessageFieldName,
-		},
-		FilePath:         "logs/zero-logs.log",
-		FileMaxSizeInMB:  5,
-		FileMaxBackups:   10,
-		FileMaxAgeInDays: 14,
-		UserLocalTime:    true,
-		CompressLogs:     false,
-	}
-
-	for _, opt := range options {
-		opt(&config)
-	}
+func NewZeroLogger(config loggingConfig) zerolog.Logger {
 
 	outputs := []io.Writer{}
 
