@@ -22,7 +22,7 @@ func HandleHelloWorld(logger zerolog.Logger, cache *cache.Cache) http.HandlerFun
 	}
 }
 
-func HandleEvents() http.HandlerFunc {
+func HandleSSEEvents() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Set http headers required for SSE
 		w.Header().Set("Content-Type", "text/event-stream")

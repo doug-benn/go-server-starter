@@ -8,12 +8,11 @@ import (
 	"github.com/rs/zerolog/hlog"
 )
 
-// AccessLogger creates a new HTTP access logger middleware
 func AccessLogger(logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		h := hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
 
-			//TODO Add skippable URL path functionality to acess logger
+			//TODO Add skippable URL path functionality to access logger
 			////Create Skippable URL paths that wont be logged
 			// for _, skipPath := range SkipPaths {
 			// 	if r.URL.Path == skipPath {

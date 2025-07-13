@@ -46,5 +46,7 @@ func NewZeroLogger(config loggingConfig) zerolog.Logger {
 		Timestamp().
 		Logger()
 
+	logger.Info().Msg("zerolog logger initialized")
+
 	return logger
 }

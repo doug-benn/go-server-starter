@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
-	mmiddleware "github.com/slok/go-http-metrics/middleware"
+	metricsware "github.com/slok/go-http-metrics/middleware"
 	"github.com/slok/go-http-metrics/middleware/std"
 
 	"github.com/doug-benn/go-server-starter/database"
@@ -24,18 +25,23 @@ import (
 )
 
 func main() {
-	if err := run(context.Background(), os.Stdout, os.Args); err != nil {
+	if err := run(os.Stdout, os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, w io.Writer, args []string) error {
-	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+func run(w io.Writer, args []string) error {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	config, err := loadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config file: %v", err)
+	}
+	fmt.Printf("Loaded Config: %+v\n", config)
+
 	logger := logging.NewZeroLogger(logging.NewLoggingConfig())
-	logger.Info().Msg("Zero Logger initialized")
 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
@@ -46,30 +52,22 @@ func run(ctx context.Context, w io.Writer, args []string) error {
 	}
 
 	mux := http.NewServeMux()
-
-	//Register all routes
-	mux.Handle("GET /helloworld", router.HandleHelloWorld(logger, cache))
-	mux.Handle("/events", router.HandleEvents())
-
-	// System Routes for debugging
-	mux.Handle("GET /health", router.HandleGetHealth())
-	mux.Handle("/debug/", router.HandleGetDebug())
+	router.AddRoutes(mux, logger, cache)
 
 	//middleware chain
 	chain := middleware.New(
 		middleware.Recovery(logger),
 		middleware.AccessLogger(logger),
-		std.HandlerProvider("", mmiddleware.New(mmiddleware.Config{
+		std.HandlerProvider("", metricsware.New(metricsware.Config{
 			Recorder: metrics.NewRecorder(metrics.Config{}),
-		}))).Build(mux)
+		})))
 
-	//Metrics Handler
-	//handler = std.Handler("", metricsMiddleware, handler)
+	chain.Build(mux)
 
 	// HTTP Server
 	server := &http.Server{
-		Addr:         fmt.Sprintf("127.0.0.1:%d", 9200),
-		Handler:      chain,
+		Addr:         fmt.Sprintf("127.0.0.1:%d", config.Port),
+		Handler:      mux,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,

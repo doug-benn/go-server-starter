@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"log"
@@ -29,10 +28,8 @@ func TestMain(m *testing.M) {
 
 	port := "9200" //Hard Coded Port
 
-	ctx, cancel := context.WithCancel(context.Background())
 	go func() { // Start the server in a goroutine
-		if err := run(ctx, os.Stdout, []string{"test", "--port", port}); err != nil {
-			cancel()
+		if err := run(os.Stdout, []string{"test", "--port", port}); err != nil {
 			log.Fatal(err)
 		}
 	}()
@@ -48,7 +45,6 @@ func TestMain(m *testing.M) {
 	}
 
 	exitCode := m.Run()
-	cancel()
 	os.Exit(exitCode)
 }
 
