@@ -3,6 +3,8 @@ package router
 import (
 	"net/http"
 
+	"github.com/doug-benn/go-server-starter/producer"
+	"github.com/doug-benn/go-server-starter/sse"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog"
 )
@@ -11,6 +13,7 @@ func AddRoutes(
 	mux *http.ServeMux,
 	logger zerolog.Logger,
 	cache *cache.Cache,
+	producer *producer.Producer[sse.Event],
 ) {
 
 	//Register all routes

@@ -18,7 +18,9 @@ import (
 
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/logging"
+	"github.com/doug-benn/go-server-starter/producer"
 	"github.com/doug-benn/go-server-starter/router"
+	"github.com/doug-benn/go-server-starter/sse"
 	"github.com/patrickmn/go-cache"
 
 	"github.com/doug-benn/go-server-starter/middleware"
@@ -51,8 +53,46 @@ func run(w io.Writer, args []string) error {
 		logger.Error().Err(err).Msg("database error")
 	}
 
+	// Create a producer for FizzBuzz events with a 5-second broadcast timeout
+	fizzBuzzProducer := producer.NewProducer(
+		producer.WithBroadcastTimeout[sse.Event](5 * time.Second),
+	)
+
+	// Start the producer in a goroutine
+	go fizzBuzzProducer.Start(ctx)
+
+	// Producer goroutine - generates FizzBuzz events
+	go func() {
+
+		for i := 1; true; i = (i + 1) % 1000 {
+			var result string
+
+			switch {
+			case i%15 == 0:
+				result = "FizzBuzz"
+			case i%3 == 0:
+				result = "Fizz"
+			case i%5 == 0:
+				result = "Buzz"
+			default:
+				result = fmt.Sprintf("%d", i)
+			}
+
+			event := sse.Event{
+				Type: "FixxBuzz Event",
+				Data: result,
+			}
+
+			fizzBuzzProducer.Broadcast(ctx, event)
+
+			// Add some delay between broadcasts
+			time.Sleep(100 * time.Millisecond)
+		}
+
+	}()
+
 	mux := http.NewServeMux()
-	router.AddRoutes(mux, logger, cache)
+	router.AddRoutes(mux, logger, cache, fizzBuzzProducer)
 
 	//middleware chain
 	chain := middleware.New(
