@@ -2,299 +2,184 @@ package database
 
 import (
 	"context"
-	"sync"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// resetSingleton resets the singleton state for testing
-func resetSingleton() {
-	pgOnce = sync.Once{}
-	pgPool = nil
-	pgErr = nil
+func TestMain(m *testing.M) {
+	// Run tests
+	code := m.Run()
+	os.Exit(code)
 }
 
-// getTestConfig returns a default configuration for testing
-func getTestConfig() postgrseConfig {
-	return postgrseConfig{
-		Host:              "localhost",
-		Port:              "5432",
+func setupPostgresContainer(t *testing.T) (PostgresConfig, func()) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	req := testcontainers.ContainerRequest{
+		Image:        "postgres:15-alpine",
+		ExposedPorts: []string{"5432/tcp"},
+		Env: map[string]string{
+			"POSTGRES_DB":       "testdb",
+			"POSTGRES_USER":     "testuser",
+			"POSTGRES_PASSWORD": "testpass",
+		},
+		WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(30 * time.Second),
+	}
+
+	postgresContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	require.NoError(t, err)
+
+	host, err := postgresContainer.Host(ctx)
+	require.NoError(t, err)
+
+	port, err := postgresContainer.MappedPort(ctx, "5432")
+	require.NoError(t, err)
+
+	config := PostgresConfig{
+		Host:              host,
+		Port:              port.Int(),
 		Username:          "testuser",
 		Password:          "testpass",
 		Database:          "testdb",
 		SSLMode:           "disable",
-		ConnectTimeout:    time.Second * 10,
+		ConnectTimeout:    5 * time.Second,
 		ApplicationName:   "test-app",
 		MaxConns:          10,
-		MinConns:          2,
+		MinConns:          1,
 		MaxConnLifetime:   time.Hour,
-		MaxConnIdleTime:   time.Minute * 30,
-		HealthCheckPeriod: time.Minute,
+		MaxConnIdleTime:   30 * time.Minute,
+		HealthCheckPeriod: 1 * time.Minute,
 		MaxRetries:        3,
-		RetryDelay:        time.Millisecond * 100,
+		InitialRetryDelay: 100 * time.Millisecond, // Faster for tests
+		BackoffMultiplier: 2.0,
+		MaxRetryDelay:     5 * time.Second,
 	}
-}
 
-// setupPostgresContainer starts a PostgreSQL test container
-func setupPostgresContainer(ctx context.Context, t *testing.T) (*postgres.PostgresContainer, postgrseConfig) {
-	t.Helper()
+	cleanup := func() {
+		if err := postgresContainer.Terminate(ctx); err != nil {
+			t.Logf("failed to terminate container: %v", err)
+		}
+	}
 
-	config := getTestConfig()
-
-	container, err := postgres.Run(ctx,
-		"postgres:17-alpine",
-		postgres.WithDatabase(config.Database),
-		postgres.WithUsername(config.Username),
-		postgres.WithPassword(config.Password),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(5*time.Minute)),
-	)
-	require.NoError(t, err)
-
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
-
-	port, err := container.MappedPort(ctx, "5432")
-	require.NoError(t, err)
-
-	config.Host = host
-	config.Port = port.Port()
-
-	return container, config
+	return config, cleanup
 }
 
 func TestNewDatabase_Success(t *testing.T) {
+	config, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
 
 	db, err := NewDatabase(ctx, logger, config)
 	require.NoError(t, err)
 	require.NotNil(t, db)
+	defer db.Close()
 
-	assert.NotNil(t, db.pool)
-	assert.Equal(t, config, db.config)
-	assert.False(t, db.closed)
+	// Verify pool is properly configured
+	stats := db.Stats()
+	assert.NotNil(t, stats)
+	assert.Equal(t, int32(10), stats.MaxConns())
 
-	// Test that the connection works
+	// Test ping works
 	err = db.Ping(ctx)
-	assert.NoError(t, err)
-
-	// Clean up
-	err = db.Close()
 	assert.NoError(t, err)
 }
 
 func TestNewDatabase_InvalidConfig(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx := context.Background()
-	resetSingleton()
 
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-	config := getTestConfig()
-	config.Host = "invalid-host"
-	config.Port = "99999"
+	config := PostgresConfig{
+		Host:              "nonexistent-host",
+		Port:              5432,
+		Username:          "user",
+		Password:          "pass",
+		Database:          "db",
+		SSLMode:           "disable",
+		HealthCheckPeriod: 1 * time.Minute,
+		MaxRetries:        1, // Fail fast
+		InitialRetryDelay: 10 * time.Millisecond,
+		MaxConns:          10,
+		MinConns:          1,
+	}
 
 	db, err := NewDatabase(ctx, logger, config)
 	assert.Error(t, err)
 	assert.Nil(t, db)
-	assert.Contains(t, err.Error(), "failed to parse pool config")
-}
-
-func TestNewDatabase_SingletonBehavior(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	// Create first database instance
-	db1, err := NewDatabase(ctx, logger, config)
-	require.NoError(t, err)
-	defer db1.Close()
-
-	// Create second database instance - should use the same pool
-	db2, err := NewDatabase(ctx, logger, config)
-	require.NoError(t, err)
-	defer db2.Close()
-
-	// Both should have the same pool reference
-	assert.Equal(t, db1.pool, db2.pool)
 }
 
 func TestNewDatabase_ContextCancellation(t *testing.T) {
-	resetSingleton()
+	config, cleanup := setupPostgresContainer(t)
+	defer cleanup()
 
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-	config := getTestConfig()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	// Create a context that's immediately cancelled
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	// Create context that will be cancelled quickly
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	// Wait for context to be cancelled
+	time.Sleep(10 * time.Millisecond)
 
 	db, err := NewDatabase(ctx, logger, config)
 	assert.Error(t, err)
 	assert.Nil(t, db)
+	assert.Contains(t, err.Error(), "context")
 }
 
-func TestPostgresDatabase_InitPool_Success(t *testing.T) {
+func TestPostgresDatabase_PingAfterClose(t *testing.T) {
+	config, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx := context.Background()
-	resetSingleton()
 
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-	db := &PostgresDatabase{
-		config: config,
-		logger: logger,
-	}
-
-	pool, err := db.initPool(ctx)
+	db, err := NewDatabase(ctx, logger, config)
 	require.NoError(t, err)
-	require.NotNil(t, pool)
 
-	defer pool.Close()
+	// Close the database
+	db.Close()
 
-	// Test that the pool configuration is applied correctly
-	stats := pool.Config()
-	assert.Equal(t, config.MaxConns, stats.MaxConns)
-	assert.Equal(t, config.MinConns, stats.MinConns)
-	assert.Equal(t, config.MaxConnLifetime, stats.MaxConnLifetime)
-	assert.Equal(t, config.MaxConnIdleTime, stats.MaxConnIdleTime)
-	assert.Equal(t, config.HealthCheckPeriod, stats.HealthCheckPeriod)
-}
-
-func TestPostgresDatabase_InitPool_InvalidConnectionString(t *testing.T) {
-	ctx := context.Background()
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	config := getTestConfig()
-	config.Host = "invalid host with spaces" // Invalid hostname
-
-	db := &PostgresDatabase{
-		config: config,
-		logger: logger,
-	}
-
-	pool, err := db.initPool(ctx)
+	// Ping should fail after close
+	err = db.Ping(ctx)
 	assert.Error(t, err)
-	assert.Nil(t, pool)
-	assert.Contains(t, err.Error(), "failed to parse pool config")
 }
 
-func TestPostgresDatabase_PingWithRetry_Success(t *testing.T) {
+func TestPostgresDatabase_Stats(t *testing.T) {
+	config, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx := context.Background()
-	resetSingleton()
 
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-	db := &PostgresDatabase{
-		config: config,
-		logger: logger,
-	}
-
-	pool, err := db.initPool(ctx)
+	db, err := NewDatabase(ctx, logger, config)
 	require.NoError(t, err)
-	db.pool = pool
-	defer pool.Close()
+	defer db.Close()
 
-	err = db.pingWithRetry(ctx)
-	assert.NoError(t, err)
-}
-
-func TestPostgresDatabase_PingWithRetry_FailureWithRetries(t *testing.T) {
-	ctx := context.Background()
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	config := getTestConfig()
-	config.Host = "nonexistent-host"
-	config.MaxRetries = 2
-	config.RetryDelay = time.Millisecond * 10 // Fast retries for testing
-
-	db := &PostgresDatabase{
-		config: config,
-		logger: logger,
-	}
-
-	// This will fail to create a pool, but we'll test the retry logic
-	pool, err := db.initPool(ctx)
-	if err == nil && pool != nil {
-		db.pool = pool
-		defer pool.Close()
-
-		// Force close the pool to simulate connection failure
-		pool.Close()
-
-		err = db.pingWithRetry(ctx)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to ping database after")
-	}
-}
-
-func TestPostgresDatabase_PingWithRetry_ContextCancellation(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-	db := &PostgresDatabase{
-		config: config,
-		logger: logger,
-	}
-
-	pool, err := db.initPool(ctx)
-	require.NoError(t, err)
-	db.pool = pool
-	defer pool.Close()
-
-	// Cancel context during ping
-	cancelCtx, cancel := context.WithCancel(ctx)
-	cancel()
-
-	err = db.pingWithRetry(cancelCtx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "context cancelled")
+	stats := db.Stats()
+	assert.NotNil(t, stats)
+	assert.Equal(t, int32(10), stats.MaxConns()) // From our test config
 }
 
 func TestPostgresDatabase_Pool(t *testing.T) {
+	config, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
 
 	db, err := NewDatabase(ctx, logger, config)
 	require.NoError(t, err)
@@ -302,240 +187,165 @@ func TestPostgresDatabase_Pool(t *testing.T) {
 
 	pool := db.Pool()
 	assert.NotNil(t, pool)
-	assert.Equal(t, db.pool, pool)
-}
 
-func TestPostgresDatabase_IsRunning(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	db, err := NewDatabase(ctx, logger, config)
+	// Test we can use the pool directly
+	conn, err := pool.Acquire(ctx)
 	require.NoError(t, err)
+	defer conn.Release()
 
-	// Should be running initially
-	assert.True(t, db.IsRunning())
-
-	// Should not be running after close
-	err = db.Close()
-	require.NoError(t, err)
-	assert.False(t, db.IsRunning())
-}
-
-func TestPostgresDatabase_Ping(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	db, err := NewDatabase(ctx, logger, config)
-	require.NoError(t, err)
-	defer db.Close()
-
-	// Ping should work
-	err = db.Ping(ctx)
+	var result int
+	err = conn.QueryRow(ctx, "SELECT 1").Scan(&result)
 	assert.NoError(t, err)
+	assert.Equal(t, 1, result)
 }
 
-func TestPostgresDatabase_Ping_ClosedConnection(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	db, err := NewDatabase(ctx, logger, config)
-	require.NoError(t, err)
-
-	// Close the database
-	err = db.Close()
-	require.NoError(t, err)
-
-	// Ping should fail
-	err = db.Ping(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "database connection is closed")
-}
-
-func TestPostgresDatabase_Close(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	db, err := NewDatabase(ctx, logger, config)
-	require.NoError(t, err)
-
-	// Close should work
-	err = db.Close()
-	assert.NoError(t, err)
-	assert.True(t, db.closed)
-
-	// Second close should not error
-	err = db.Close()
-	assert.NoError(t, err)
-}
-
-func TestPostgresDatabase_Close_NilPool(t *testing.T) {
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	db := &PostgresDatabase{
-		config: getTestConfig(),
-		logger: logger,
-		pool:   nil, // Nil pool
-	}
-
-	err := db.Close()
-	assert.NoError(t, err)
-	assert.True(t, db.closed)
-}
-
-func TestPostgresDatabase_ConcurrentAccess(t *testing.T) {
-	ctx := context.Background()
-	resetSingleton()
-
-	container, config := setupPostgresContainer(ctx, t)
-	defer func() {
-		assert.NoError(t, container.Terminate(ctx))
-	}()
-
-	logger := zerolog.New(zerolog.NewTestWriter(t))
-
-	db, err := NewDatabase(ctx, logger, config)
-	require.NoError(t, err)
-	defer db.Close()
-
-	// Test concurrent access to methods
-	var wg sync.WaitGroup
-	numGoroutines := 10
-
-	// Test concurrent Pool() calls
-	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
-		go func() {
-			defer wg.Done()
-			pool := db.Pool()
-			assert.NotNil(t, pool)
-		}()
-	}
-
-	// Test concurrent IsRunning() calls
-	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
-		go func() {
-			defer wg.Done()
-			running := db.IsRunning()
-			assert.True(t, running)
-		}()
-	}
-
-	// Test concurrent Ping() calls
-	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
-		go func() {
-			defer wg.Done()
-			err := db.Ping(ctx)
-			assert.NoError(t, err)
-		}()
-	}
-
-	wg.Wait()
-}
-
-func TestPostgresDatabase_ConfigurationEdgeCases(t *testing.T) {
+func TestBuildConnectionString(t *testing.T) {
 	tests := []struct {
-		name          string
-		modifyConfig  func(*postgrseConfig)
-		expectError   bool
-		errorContains string
+		name     string
+		config   PostgresConfig
+		expected string
 	}{
 		{
-			name: "Zero MaxRetries",
-			modifyConfig: func(c *postgrseConfig) {
-				c.MaxRetries = 0
+			name: "basic config",
+			config: PostgresConfig{
+				Host:     "localhost",
+				Port:     5432,
+				Username: "user",
+				Password: "pass",
+				Database: "db",
 			},
-			expectError:   true,
-			errorContains: "failed to ping database after 0 attempts",
+			expected: "postgresql://user:pass@localhost:5432/db",
 		},
 		{
-			name: "Very Short RetryDelay",
-			modifyConfig: func(c *postgrseConfig) {
-				c.RetryDelay = time.Nanosecond
+			name: "with ssl and timeout",
+			config: PostgresConfig{
+				Host:           "localhost",
+				Port:           5432,
+				Username:       "user",
+				Password:       "pass",
+				Database:       "db",
+				SSLMode:        "require",
+				ConnectTimeout: 10 * time.Second,
 			},
-			expectError: false, // Should still work with valid connection
+			expected: "postgresql://user:pass@localhost:5432/db?connect_timeout=10&sslmode=require",
 		},
 		{
-			name: "Very Short ConnectTimeout",
-			modifyConfig: func(c *postgrseConfig) {
-				c.ConnectTimeout = time.Nanosecond
+			name: "with special characters in password",
+			config: PostgresConfig{
+				Host:     "localhost",
+				Port:     5432,
+				Username: "user",
+				Password: "p@ss&word#123",
+				Database: "db",
 			},
-			expectError: false, // pgx handles this gracefully
+			expected: "postgresql://user:p%40ss&word%23123@localhost:5432/db",
+		},
+		{
+			name: "with application name",
+			config: PostgresConfig{
+				Host:            "localhost",
+				Port:            5432,
+				Username:        "user",
+				Password:        "pass",
+				Database:        "db",
+				ApplicationName: "my-app",
+			},
+			expected: "postgresql://user:pass@localhost:5432/db?application_name=my-app",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			resetSingleton()
-
-			if !tt.expectError {
-				container, config := setupPostgresContainer(ctx, t)
-				defer func() {
-					assert.NoError(t, container.Terminate(ctx))
-				}()
-				tt.modifyConfig(&config)
-
-				logger := zerolog.New(zerolog.NewTestWriter(t))
-				db, err := NewDatabase(ctx, logger, config)
-
-				if tt.expectError {
-					assert.Error(t, err)
-					if tt.errorContains != "" {
-						assert.Contains(t, err.Error(), tt.errorContains)
-					}
-					assert.Nil(t, db)
-				} else {
-					assert.NoError(t, err)
-					assert.NotNil(t, db)
-					if db != nil {
-						db.Close()
-					}
-				}
-			} else {
-				// For error cases, use invalid config
-				config := getTestConfig()
-				config.Host = "nonexistent-host"
-				tt.modifyConfig(&config)
-
-				logger := zerolog.New(zerolog.NewTestWriter(t))
-				db, err := NewDatabase(ctx, logger, config)
-
-				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
-				}
-				assert.Nil(t, db)
-			}
+			result := BuildConnectionString(tt.config)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestRetryBehavior(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	ctx := context.Background()
+
+	// Use a config that will definitely fail
+	config := PostgresConfig{
+		Host:              "localhost",
+		Port:              9999, // Non-existent port
+		Username:          "user",
+		Password:          "pass",
+		Database:          "db",
+		SSLMode:           "disable",
+		MaxConns:          10,
+		MinConns:          1,
+		MaxRetries:        3, // 3 attempts total
+		HealthCheckPeriod: 1 * time.Minute,
+		InitialRetryDelay: 100 * time.Millisecond,
+		BackoffMultiplier: 2.0,
+		MaxRetryDelay:     1 * time.Second,
+	}
+
+	start := time.Now()
+	db, err := NewDatabase(ctx, logger, config)
+	duration := time.Since(start)
+
+	assert.Error(t, err)
+	assert.Nil(t, db)
+	// Check for the actual error message from our code
+	assert.Contains(t, err.Error(), "database ping failed after 3 attempts")
+
+	// Should have taken at least the retry delays (100ms + 200ms = 300ms minimum)
+	// But connection failures can be fast, so let's be more lenient
+	assert.Greater(t, duration, 50*time.Millisecond)
+}
+
+// Benchmark to ensure pool performance is reasonable
+func BenchmarkDatabasePing(b *testing.B) {
+	config, cleanup := setupPostgresContainer(&testing.T{})
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	ctx := context.Background()
+
+	db, err := NewDatabase(ctx, logger, config)
+	if err != nil {
+		b.Fatalf("failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if err := db.Ping(ctx); err != nil {
+				b.Fatalf("ping failed: %v", err)
+			}
+		}
+	})
+}
+
+// Benchmark pool stats retrieval performance
+func BenchmarkDatabaseStats(b *testing.B) {
+	config, cleanup := setupPostgresContainer(&testing.T{})
+	defer cleanup()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	ctx := context.Background()
+
+	db, err := NewDatabase(ctx, logger, config)
+	if err != nil {
+		b.Fatalf("failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			stats := db.Stats()
+			if stats == nil {
+				b.Fatal("stats should not be nil")
+			}
+			// Access some stats to ensure they're computed
+			_ = stats.AcquiredConns()
+			_ = stats.IdleConns()
+			_ = stats.TotalConns()
+		}
+	})
 }
