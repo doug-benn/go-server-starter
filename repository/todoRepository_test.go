@@ -25,7 +25,7 @@ func TestIntegration_PostgresRepository(t *testing.T) {
 	defer pool.Close()
 
 	// Create logger
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout}).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// Create PostgresDatabase
 	db := &repository.PostgresDatabase{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,13 +18,11 @@ import (
 	"github.com/slok/go-http-metrics/middleware/std"
 
 	"github.com/doug-benn/go-server-starter/database"
-	"github.com/doug-benn/go-server-starter/logging"
+	"github.com/doug-benn/go-server-starter/middleware"
 	"github.com/doug-benn/go-server-starter/producer"
 	"github.com/doug-benn/go-server-starter/router"
 	"github.com/doug-benn/go-server-starter/sse"
 	"github.com/patrickmn/go-cache"
-
-	"github.com/doug-benn/go-server-starter/middleware"
 )
 
 func main() {
@@ -43,14 +42,15 @@ func run(w io.Writer, args []string) error {
 	}
 	fmt.Printf("Loaded Config: %+v\n", config)
 
-	logger := logging.NewZeroLogger(logging.NewLoggingConfig())
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	cache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
-	postgresDatabase, err := database.NewDatabase(ctx, logger, database.NewConfig())
+	postgresDatabase, err := database.NewDatabase(ctx, logger, database.DefaultConfig())
 	if err != nil {
-		logger.Error().Err(err).Msg("database error")
+		logger.Error("error creating database pool on startup", "error", err)
+		panic(err)
 	}
 
 	// Create a producer for FizzBuzz events with a 5-second broadcast timeout
@@ -94,20 +94,17 @@ func run(w io.Writer, args []string) error {
 	mux := http.NewServeMux()
 	router.AddRoutes(mux, logger, cache, fizzBuzzProducer)
 
-	//middleware chain
-	chain := middleware.New(
-		middleware.Recovery(logger),
-		middleware.AccessLogger(logger),
-		std.HandlerProvider("", metricsware.New(metricsware.Config{
-			Recorder: metrics.NewRecorder(metrics.Config{}),
-		})))
+	handler := middleware.Recovery(logger)(mux)
+	handler = middleware.AccessLogger(logger, middleware.IgnorePath("/events"))(mux)
 
-	chain.Build(mux)
+	std.HandlerProvider("", metricsware.New(metricsware.Config{
+		Recorder: metrics.NewRecorder(metrics.Config{}),
+	}))
 
 	// HTTP Server
 	server := &http.Server{
 		Addr:         fmt.Sprintf("127.0.0.1:%d", config.Port),
-		Handler:      mux,
+		Handler:      handler,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -119,7 +116,7 @@ func run(w io.Writer, args []string) error {
 
 	//Main HTTP Server
 	go func() {
-		logger.Info().Int("port", 9200).Msg("server started")
+		logger.Info("server started", "port", 9200)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- err
 		}
@@ -127,22 +124,38 @@ func run(w io.Writer, args []string) error {
 
 	//Metrics Server
 	go func() {
-		logger.Info().Int("port", 9201).Msg("metrics started")
+		logger.Info("metrics started", "port", 9201)
 		if err := metrics.ListenAndServe(); err != nil {
 			errChan <- err
 		}
 	}()
 
-	// Server Shutdown
 	select {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		postgresDatabase.Close()
-		logger.Info().Msg("shutting down server")
-	}
+		logger.InfoContext(ctx, "shutting down server")
 
-	ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
-	return server.Shutdown(ctx)
+		// Create a new context for shutdown with timeout
+		ctx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		// Shutdown the HTTP server first
+		if err := server.Shutdown(ctx); err != nil {
+			return fmt.Errorf("HTTP server shutdown: %w", err)
+		}
+
+		// Shutdown the metrics server
+		if err := metrics.Shutdown(ctx); err != nil {
+			return fmt.Errorf("metrics server shutdown: %w", err)
+		}
+
+		// cancel the main context
+		cancel()
+
+		// services cleanup
+		postgresDatabase.Close()
+
+		return nil
+	}
 }
