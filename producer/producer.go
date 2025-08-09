@@ -3,7 +3,8 @@ package producer
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
+	"os"
 	"sync"
 	"time"
 )
@@ -21,6 +22,7 @@ type Producer[T any] struct {
 	nextID           subId
 	doneListener     chan subId    // channel to listen for IDs of subscriptions to be removed.
 	broadcastTimeout time.Duration // maximum duration to wait for an event to be sent.
+	logger           *slog.Logger
 }
 
 type ProducerOpt[T any] func(*Producer[T])
@@ -33,11 +35,18 @@ func WithBroadcastTimeout[T any](timeout time.Duration) ProducerOpt[T] {
 	}
 }
 
+func WithCustomLogger[T any](logger *slog.Logger) ProducerOpt[T] {
+	return func(ep *Producer[T]) {
+		ep.logger = logger
+	}
+}
+
 func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 	producer := &Producer[T]{
 		subs:             make(map[subId]*Subscription[T]),
 		doneListener:     make(chan subId, 100),
 		broadcastTimeout: defaultBroadcastTimeout,
+		logger:           slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	}
 	for _, opt := range opts {
 		opt(producer)
@@ -57,6 +66,16 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 			}
 			ep.Unlock()
 		case <-ctx.Done():
+			ep.logger.Info("context cancelled producer closing")
+			// Clean up all subscriptions
+			ep.Lock()
+			for _, sub := range ep.subs {
+				close(sub.events)
+			}
+			// Clear the map
+			ep.subs = make(map[subId]*Subscription[T])
+			ep.Unlock()
+
 			close(ep.doneListener)
 			return
 		}
@@ -76,7 +95,7 @@ func (ep *Producer[T]) Start(ctx context.Context) {
 // the subscriber needs to handle basic events. If there are 100 events per second, and the processing routine
 // can only handle 90, being able to handle excess events over a 10 second period gives us a minimum buffer size of 100.
 func (ep *Producer[T]) Subscribe(bufferSize int) *Subscription[T] {
-	fmt.Println("Subscriber subscribing")
+	ep.logger.Info("new subscriber subscribing")
 	ep.Lock()
 	defer ep.Unlock()
 	id := ep.nextID
@@ -85,6 +104,7 @@ func (ep *Producer[T]) Subscribe(bufferSize int) *Subscription[T] {
 		id:     id,
 		events: make(chan T, bufferSize),
 		done:   ep.doneListener,
+		logger: ep.logger,
 	}
 	ep.subs[id] = sub
 	return sub
@@ -105,7 +125,7 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 			select {
 			case listener.events <- event:
 			case <-time.After(ep.broadcastTimeout):
-				fmt.Printf("Broadcast to subscriber %d timed out\n", listener.id)
+				ep.logger.Info("broadcast to subscriber timed out", "listener id", listener.id)
 			case <-ctx.Done():
 			}
 		}(sub, &wg)
@@ -119,16 +139,21 @@ type Subscription[T any] struct {
 	id     subId
 	events chan T
 	done   chan subId
+	logger *slog.Logger
 }
 
 // Next waits for the next event or context cancelation, returning the event or an error.
 func (es *Subscription[T]) Next(ctx context.Context) (T, error) {
 	var zeroVal T
 	select {
-	case ev := <-es.events:
+	case ev, ok := <-es.events:
+		if !ok {
+			// Channel was closed, producer is shutting down
+			return zeroVal, context.Canceled
+		}
 		return ev, nil
 	case <-ctx.Done():
-		fmt.Println("Subscriber Disconnected")
+		es.logger.Info("subscriber disconnected")
 		es.done <- es.id
 		return zeroVal, ctx.Err()
 	}
