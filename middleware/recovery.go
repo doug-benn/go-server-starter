@@ -1,13 +1,12 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 	"runtime"
-
-	"github.com/rs/zerolog"
 )
 
-func Recovery(logger zerolog.Logger) func(http.Handler) http.Handler {
+func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
@@ -16,15 +15,15 @@ func Recovery(logger zerolog.Logger) func(http.Handler) http.Handler {
 					n := runtime.Stack(buf, false)
 					buf = buf[:n]
 
-					logger.Error().
-						Ctx(r.Context()).
-						Any("panic!", err).
-						Str("stack", string(buf)).
-						Str("method", r.Method).
-						Str("path", r.URL.Path).
-						Str("query", r.URL.RawQuery).
-						Str("ip", r.RemoteAddr).
-						Msg("panic!")
+					logger.ErrorContext(r.Context(),
+						"panic!",
+						slog.Any("error", err),
+						slog.String("stack", string(buf)),
+						slog.String("method", r.Method),
+						slog.String("path", r.URL.Path),
+						slog.String("query", r.URL.RawQuery),
+						slog.String("ip", r.RemoteAddr),
+					)
 
 					http.Error(w, "internal server error", http.StatusInternalServerError)
 				}

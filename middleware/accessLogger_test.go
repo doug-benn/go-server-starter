@@ -3,13 +3,14 @@ package middleware
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -114,7 +115,7 @@ func TestAccessLogger(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup logger buffer to capture logs
 			var logBuffer bytes.Buffer
-			logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+			logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 			// Create the middleware
 			middleware := AccessLogger(logger)
@@ -152,7 +153,7 @@ func TestAccessLogger(t *testing.T) {
 			assert.Contains(t, logOutput, fmt.Sprintf(`"size_bytes":%d`, len(tt.expectedBody)))
 			assert.Contains(t, logOutput, `"elapsed_ms"`)
 			assert.Contains(t, logOutput, `"remote_ip":"192.168.1.100:12345"`)
-			assert.Contains(t, logOutput, `"completed request"`)
+			assert.Contains(t, logOutput, fmt.Sprintf(`"%s: %s"`, strconv.Itoa(tt.expectedStatus), http.StatusText(tt.expectedStatus)))
 		})
 	}
 }
@@ -160,7 +161,7 @@ func TestAccessLogger(t *testing.T) {
 // TestAccessLoggerWithSpecialCharacters tests handling of special characters in URLs
 func TestAccessLoggerWithSpecialCharacters(t *testing.T) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +183,7 @@ func TestAccessLoggerWithSpecialCharacters(t *testing.T) {
 // TestAccessLoggerWithEmptyQuery tests handling of requests without query parameters
 func TestAccessLoggerWithEmptyQuery(t *testing.T) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +203,7 @@ func TestAccessLoggerWithEmptyQuery(t *testing.T) {
 // TestAccessLoggerWithLargeResponse tests logging of large response bodies
 func TestAccessLoggerWithLargeResponse(t *testing.T) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 
@@ -227,7 +228,7 @@ func TestAccessLoggerWithLargeResponse(t *testing.T) {
 // TestAccessLoggerWithPanicRecovery tests that logging still works even if the handler panics
 func TestAccessLoggerWithPanicRecovery(t *testing.T) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -246,7 +247,7 @@ func TestAccessLoggerWithPanicRecovery(t *testing.T) {
 // TestAccessLoggerElapsedTime tests that elapsed time is properly measured
 func TestAccessLoggerElapsedTime(t *testing.T) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 
@@ -307,7 +308,7 @@ func TestAccessLoggerDifferentRemoteAddresses(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var logBuffer bytes.Buffer
-			logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+			logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 			middleware := AccessLogger(logger)
 			handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +331,7 @@ func TestAccessLoggerDifferentRemoteAddresses(t *testing.T) {
 // TestAccessLoggerMiddlewareChaining tests that the middleware properly chains with other middlewares
 func TestAccessLoggerMiddlewareChaining(t *testing.T) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// Create a custom middleware that adds a header
 	customMiddleware := func(next http.Handler) http.Handler {
@@ -368,7 +369,7 @@ func TestAccessLoggerMiddlewareChaining(t *testing.T) {
 // BenchmarkAccessLogger benchmarks the performance of the AccessLogger middleware
 func BenchmarkAccessLogger(b *testing.B) {
 	var logBuffer bytes.Buffer
-	logger := zerolog.New(&logBuffer).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -388,7 +389,7 @@ func BenchmarkAccessLogger(b *testing.B) {
 
 // TestAccessLoggerReturnValue tests that the middleware returns a proper http.Handler
 func TestAccessLoggerReturnValue(t *testing.T) {
-	logger := zerolog.New(bytes.NewBuffer(nil)).With().Timestamp().Logger()
+	logger := slog.New(slog.NewJSONHandler(bytes.NewBuffer(nil), &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	middleware := AccessLogger(logger)
 

@@ -3,12 +3,11 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/rs/zerolog"
 )
 
 func TestRecovery(t *testing.T) {
@@ -52,8 +51,8 @@ func TestRecovery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a buffer to capture log output
-			var logBuf bytes.Buffer
-			logger := zerolog.New(&logBuf).With().Timestamp().Logger()
+			var logBuffer bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 			// Create the recovery middleware
 			recoveryMiddleware := Recovery(logger)
@@ -83,7 +82,7 @@ func TestRecovery(t *testing.T) {
 			}
 
 			// Check logging behavior
-			logOutput := logBuf.String()
+			logOutput := logBuffer.String()
 			if tt.expectPanic {
 				// Verify panic was logged
 				if !strings.Contains(logOutput, "panic!") {
@@ -119,8 +118,8 @@ func TestRecoveryWithDifferentHTTPMethods(t *testing.T) {
 
 	for _, method := range methods {
 		t.Run("panic_with_"+method, func(t *testing.T) {
-			var logBuf bytes.Buffer
-			logger := zerolog.New(&logBuf).With().Timestamp().Logger()
+			var logBuffer bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				panic("test panic")
@@ -138,7 +137,7 @@ func TestRecoveryWithDifferentHTTPMethods(t *testing.T) {
 				t.Errorf("expected status 500, got %d", w.Code)
 			}
 
-			logOutput := logBuf.String()
+			logOutput := logBuffer.String()
 			if !strings.Contains(logOutput, method) {
 				t.Errorf("expected log to contain method %s", method)
 			}
@@ -147,8 +146,8 @@ func TestRecoveryWithDifferentHTTPMethods(t *testing.T) {
 }
 
 func TestRecoveryPreservesContext(t *testing.T) {
-	var logBuf bytes.Buffer
-	logger := zerolog.New(&logBuf).With().Timestamp().Logger()
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// Create a context with a value
 	ctx := context.WithValue(context.Background(), "test-key", "test-value")

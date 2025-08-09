@@ -55,7 +55,8 @@ func run(w io.Writer, args []string) error {
 
 	// Create a producer for FizzBuzz events with a 5-second broadcast timeout
 	fizzBuzzProducer := producer.NewProducer(
-		producer.WithBroadcastTimeout[sse.Event](5 * time.Second),
+		producer.WithBroadcastTimeout[sse.Event](5*time.Second),
+		producer.WithCustomLogger[sse.Event](logger),
 	)
 
 	// Start the producer in a goroutine

@@ -4,20 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/models"
-	_ "github.com/lib/pq"
 )
 
 type PostgresTodoRepository struct {
-	db *database.PostgresDatabase
+	db     *database.PostgresDatabase
+	logger *slog.Logger
 }
 
-func NewPostgresTodoRepository(db *database.PostgresDatabase) *PostgresTodoRepository {
+func NewPostgresTodoRepository(db *database.PostgresDatabase, logger *slog.Logger) *PostgresTodoRepository {
 	return &PostgresTodoRepository{
-		db: db,
+		db:     db,
+		logger: logger,
 	}
 }
 
