@@ -10,7 +10,7 @@ type Chain struct {
 }
 
 //Create a new list of middlewares
-func New(middlewares ...Middleware) Chain {
+func NewChain(middlewares ...Middleware) Chain {
 	return Chain{append(([]Middleware)(nil), middlewares...)}
 }
 

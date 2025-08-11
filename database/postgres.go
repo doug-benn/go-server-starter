@@ -10,7 +10,6 @@ import (
 
 	"github.com/doug-benn/go-server-starter/utilities"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/joho/godotenv/autoload"
 )
 
 // PostgresConfig holds database configuration parameters

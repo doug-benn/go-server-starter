@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/doug-benn/go-server-starter/producer"
@@ -36,19 +36,8 @@ type Event struct {
 	Retry int
 }
 
-// Sender is a send function for sending SSE messages to the client. It is
-// callable but also provides a `sender.Data(...)` convenience method if
-// you don't need to set the other fields in the message.
-type Sender func(Event) error
-
-// Data sends a message with the given data to the client. This is equivalent
-// to calling `sender(Message{Data: data})`.
-func (s Sender) Data(eventType string, data any) error {
-	return s(Event{Type: eventType, Data: data})
-}
-
 // SSEHandler creates an HTTP handler that serves Server-Sent Events using the producer
-func SSEHandler[T Event](producer *producer.Producer[Event]) http.HandlerFunc {
+func SSEHandler[T Event](producer *producer.Producer[Event], logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Set SSE headers
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -106,10 +95,10 @@ func SSEHandler[T Event](producer *producer.Producer[Event]) http.HandlerFunc {
 
 			if deadliner != nil {
 				if err := deadliner.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: unable to set write deadline: %v\n", err)
+					logger.Error("unable to set write deadline", "error", err)
 				}
 			} else {
-				fmt.Fprintln(os.Stderr, "write deadline not supported by underlying writer")
+				logger.Warn("write deadline not supported by underlying writer")
 			}
 
 			// Write optional fields
@@ -141,7 +130,7 @@ func SSEHandler[T Event](producer *producer.Producer[Event]) http.HandlerFunc {
 			if flusher != nil {
 				flusher.Flush()
 			} else {
-				fmt.Fprintln(os.Stderr, "error: unable to flush")
+				logger.Error("unable to flush", "error", err)
 			}
 
 			// Check if client disconnected

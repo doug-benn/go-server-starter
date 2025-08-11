@@ -20,7 +20,9 @@ import (
 	"github.com/doug-benn/go-server-starter/database"
 	"github.com/doug-benn/go-server-starter/middleware"
 	"github.com/doug-benn/go-server-starter/producer"
+	"github.com/doug-benn/go-server-starter/repository"
 	"github.com/doug-benn/go-server-starter/router"
+	"github.com/doug-benn/go-server-starter/services"
 	"github.com/doug-benn/go-server-starter/sse"
 	"github.com/patrickmn/go-cache"
 )
@@ -50,8 +52,11 @@ func run(w io.Writer, args []string) error {
 	postgresDatabase, err := database.NewDatabase(ctx, logger, database.DefaultConfig())
 	if err != nil {
 		logger.Error("error creating database pool on startup", "error", err)
-		panic(err)
+		return err
 	}
+
+	todoRepository := repository.NewPostgresTodoRepository(postgresDatabase, logger)
+	todoService := services.NewTodoService(todoRepository)
 
 	// Create a producer for FizzBuzz events with a 5-second broadcast timeout
 	fizzBuzzProducer := producer.NewProducer(
@@ -93,14 +98,14 @@ func run(w io.Writer, args []string) error {
 	}()
 
 	mux := http.NewServeMux()
-	router.AddRoutes(mux, logger, cache, fizzBuzzProducer)
+	router.AddRoutes(mux, logger, cache, fizzBuzzProducer, todoService)
 
 	handler := middleware.Recovery(logger)(mux)
 	handler = middleware.AccessLogger(logger, middleware.IgnorePath("/events"))(mux)
 
-	std.HandlerProvider("", metricsware.New(metricsware.Config{
+	handler = std.Handler("", metricsware.New(metricsware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{}),
-	}))
+	}), handler)
 
 	// HTTP Server
 	server := &http.Server{
