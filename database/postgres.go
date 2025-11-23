@@ -44,7 +44,7 @@ func DefaultConfig() PostgresConfig {
 		Host:              utilities.GetEnvOrDefault("POSTGRES_HOST", "localhost"),
 		Port:              port,
 		Username:          utilities.GetEnvOrDefault("POSTGRES_USER", "postgres"),
-		Password:          utilities.GetEnvOrDefault("POSTGRES_PASSWORD", "password"),
+		Password:          utilities.GetEnvOrDefault("POSTGRES_PASSWORD", "postgres"),
 		Database:          utilities.GetEnvOrDefault("POSTGRES_DB", "testdb"),
 		SSLMode:           utilities.GetEnvOrDefault("POSTGRES_SSL_MODE", "disable"),
 		ConnectTimeout:    5 * time.Second,

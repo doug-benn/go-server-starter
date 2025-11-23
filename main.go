@@ -67,35 +67,41 @@ func run(w io.Writer, args []string) error {
 	// Start the producer in a goroutine
 	go fizzBuzzProducer.Start(ctx)
 
-	// Producer goroutine - generates FizzBuzz events
-	go func() {
+	postgresListener := database.NewListener[sse.Event](postgresDatabase.Pool())
+	postgresListener.Connect(ctx)
+	postgresListener.ListenToChannel(ctx, "events")
 
-		for i := 1; true; i = (i + 1) % 1000 {
-			var result string
+	go postgresListener.WaitForNotification(ctx, fizzBuzzProducer)
 
-			switch {
-			case i%15 == 0:
-				result = "FizzBuzz"
-			case i%3 == 0:
-				result = "Fizz"
-			case i%5 == 0:
-				result = "Buzz"
-			default:
-				result = fmt.Sprintf("%d", i)
-			}
+	// // Producer goroutine - generates FizzBuzz events
+	// go func() {
 
-			event := sse.Event{
-				Type: "FixxBuzz Event",
-				Data: result,
-			}
+	// 	for i := 1; true; i = (i + 1) % 1000 {
+	// 		var result string
 
-			fizzBuzzProducer.Broadcast(ctx, event)
+	// 		switch {
+	// 		case i%15 == 0:
+	// 			result = "FizzBuzz"
+	// 		case i%3 == 0:
+	// 			result = "Fizz"
+	// 		case i%5 == 0:
+	// 			result = "Buzz"
+	// 		default:
+	// 			result = fmt.Sprintf("%d", i)
+	// 		}
 
-			// Add some delay between broadcasts
-			time.Sleep(100 * time.Millisecond)
-		}
+	// 		event := sse.Event{
+	// 			Type: "FixxBuzz Event",
+	// 			Data: result,
+	// 		}
 
-	}()
+	// 		fizzBuzzProducer.Broadcast(ctx, event)
+
+	// 		// Add some delay between broadcasts
+	// 		time.Sleep(100 * time.Millisecond)
+	// 	}
+
+	// }()
 
 	mux := http.NewServeMux()
 	router.AddRoutes(mux, logger, cache, fizzBuzzProducer, todoService)
