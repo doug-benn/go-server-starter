@@ -37,9 +37,9 @@ services:
         condition: service_healthy
 
   migrate:
-    image: migrate/migrate
-    volumes:
-      - ./migrations:/migrations
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
     command: [
       "-path", "/migrations",
       "-database", "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable",
