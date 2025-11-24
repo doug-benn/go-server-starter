@@ -20,7 +20,7 @@ AS $$
             TG_OP,
             'timestamp',
             NOW(),
-            'data',
+            'record',
             data
         );
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -34,6 +35,21 @@ func main() {
 	}
 }
 
+type DatabaseEvent struct {
+	Table     string                 `json:"table"`
+	Action    string                 `json:"action"`
+	Timestamp time.Time              `json:"timestamp"`
+	Data      map[string]interface{} `json:"data"`
+}
+
+func DecodeAsDatabaseEvent(payload []byte) (*DatabaseEvent, error) {
+	var event DatabaseEvent
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
 func run(w io.Writer, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -59,52 +75,45 @@ func run(w io.Writer, args []string) error {
 	todoService := services.NewTodoService(todoRepository)
 
 	// Create a producer for FizzBuzz events with a 5-second broadcast timeout
-	fizzBuzzProducer := producer.NewProducer(
+	sseProducer := producer.NewProducer(
 		producer.WithBroadcastTimeout[sse.Event](5*time.Second),
 		producer.WithCustomLogger[sse.Event](logger),
 	)
 
 	// Start the producer in a goroutine
-	go fizzBuzzProducer.Start(ctx)
+	go sseProducer.Start(ctx)
 
-	postgresListener := database.NewListener[sse.Event](postgresDatabase.Pool())
+	postgresListener := database.NewListener(postgresDatabase.Pool())
 	postgresListener.Connect(ctx)
 	postgresListener.ListenToChannel(ctx, "events")
 
-	go postgresListener.WaitForNotification(ctx, fizzBuzzProducer)
+	go func() {
+		for {
+			// Get raw notification from database
+			notification, err := postgresListener.WaitForNotification(ctx)
+			if err != nil {
+				// handle error
+				continue
+			}
 
-	// // Producer goroutine - generates FizzBuzz events
-	// go func() {
+			payload, err := DecodeAsDatabaseEvent(notification.Payload)
+			if err != nil {
+				logger.Error("Decode error", "error", err)
+			}
 
-	// 	for i := 1; true; i = (i + 1) % 1000 {
-	// 		var result string
+			fmt.Println(payload)
 
-	// 		switch {
-	// 		case i%15 == 0:
-	// 			result = "FizzBuzz"
-	// 		case i%3 == 0:
-	// 			result = "Fizz"
-	// 		case i%5 == 0:
-	// 			result = "Buzz"
-	// 		default:
-	// 			result = fmt.Sprintf("%d", i)
-	// 		}
+			event := sse.Event{
+				Data: notification.Payload,
+			}
 
-	// 		event := sse.Event{
-	// 			Type: "FixxBuzz Event",
-	// 			Data: result,
-	// 		}
+			sseProducer.Broadcast(ctx, event)
 
-	// 		fizzBuzzProducer.Broadcast(ctx, event)
-
-	// 		// Add some delay between broadcasts
-	// 		time.Sleep(100 * time.Millisecond)
-	// 	}
-
-	// }()
+		}
+	}()
 
 	mux := http.NewServeMux()
-	router.AddRoutes(mux, logger, cache, fizzBuzzProducer, todoService)
+	router.AddRoutes(mux, logger, cache, sseProducer, todoService)
 
 	handler := middleware.Recovery(logger)(mux)
 	handler = middleware.AccessLogger(logger, middleware.IgnorePath("/events"))(mux)

@@ -29,6 +29,11 @@ type writeDeadliner interface {
 	SetWriteDeadline(time.Time) error
 }
 
+// Event represents an SSE event
+// Data can be:
+// - json.RawMessage ([]byte) - will be written directly as valid JSON
+// - string - will be JSON-encoded as a string
+// - any other type - will be JSON-encoded
 type Event struct {
 	ID    int
 	Type  string
@@ -120,13 +125,43 @@ func SSEHandler[T Event](producer *producer.Producer[Event], logger *slog.Logger
 				w.Write([]byte(err.Error()))
 				w.Write([]byte("\"}\n\n"))
 			}
-			encoder := json.NewEncoder(w)
-			if err := encoder.Encode(event.Data); err != nil {
-				w.Write([]byte(`{"error": "encode error: `))
-				w.Write([]byte(err.Error()))
-				w.Write([]byte("\"}\n\n"))
+
+			// Handle different data types
+			switch data := event.Data.(type) {
+			case json.RawMessage: // Already valid JSON bytes - write directly
+				if _, err := w.Write(data); err != nil {
+					w.Write([]byte(`{"error": "encode error: `))
+					w.Write([]byte(err.Error()))
+					w.Write([]byte("\"}\n\n"))
+					logger.Error("failed to encode raw json", "error", err)
+				}
+			case []byte: // Treat as JSON RawMessage
+				if _, err := w.Write(data); err != nil {
+					w.Write([]byte(`{"error": "encode error: `))
+					w.Write([]byte(err.Error()))
+					w.Write([]byte("\"}\n\n"))
+					logger.Error("failed to encode []byte", "error", err)
+				}
+			case string: // JSON-encode the string
+				encoder := json.NewEncoder(w)
+				if err := encoder.Encode(data); err != nil {
+					w.Write([]byte(`{"error": "encode error"}`))
+					w.Write([]byte(err.Error()))
+					w.Write([]byte("\"}\n\n"))
+					logger.Error("failed to encode string data", "error", err)
+				}
+			default: // JSON-encode any other type
+				encoder := json.NewEncoder(w)
+				if err := encoder.Encode(data); err != nil {
+					w.Write([]byte(`{"error": "encode error"}`))
+					w.Write([]byte(err.Error()))
+					w.Write([]byte("\"}\n\n"))
+					logger.Error("failed to encode data", "error", err)
+				}
 			}
-			w.Write([]byte("\n"))
+
+			w.Write([]byte("\n\n"))
+
 			if flusher != nil {
 				flusher.Flush()
 			} else {

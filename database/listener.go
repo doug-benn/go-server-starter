@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,7 +22,7 @@ type Listener interface {
 	ListenToChannel(ctx context.Context, channel string) error
 	Ping(ctx context.Context) error
 	UnlistenToChannel(ctx context.Context, channel string) error
-	WaitForNotification(ctx context.Context) error
+	WaitForNotification(ctx context.Context) (*Notification, error)
 }
 
 func NewListener(dbPool *pgxpool.Pool) Listener {
@@ -105,22 +104,19 @@ func (listener *listener) UnlistenToChannel(ctx context.Context, channel string)
 	return err
 }
 
-func (listener *listener) WaitForNotification(ctx context.Context) error {
+func (listener *listener) WaitForNotification(ctx context.Context) (*Notification, error) {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 
 	pgNotification, err := listener.conn.Conn().WaitForNotification(ctx)
-
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	notification := Notification{
+	notification := &Notification{
 		Channel: pgNotification.Channel,
 		Payload: []byte(pgNotification.Payload),
 	}
 
-	fmt.Println(notification)
-
-	return nil
+	return notification, nil
 }
