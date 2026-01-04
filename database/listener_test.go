@@ -1,4 +1,4 @@
-package main
+package database
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// TestListenerShutdownLogic tests the key logic that was added to fix the resource leak
+// TestListenerShutdownLogic tests listener shutdown logic
 func TestListenerShutdownLogic(t *testing.T) {
 	// Test that the context cancellation pattern works correctly
 	ctx, cancel := context.WithCancel(context.Background())
@@ -40,8 +40,8 @@ func TestListenerShutdownLogic(t *testing.T) {
 	// Wait for graceful shutdown
 	select {
 	case <-shutdownDetected:
-		t.Log("✅ Listener goroutine shut down gracefully - resource leak fixed!")
+		t.Log("listener goroutine shut down gracefully")
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("❌ Listener goroutine did not shut down - resource leak persists")
+		t.Fatal("listener goroutine did not shut down")
 	}
 }
