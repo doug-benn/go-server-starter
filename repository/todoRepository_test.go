@@ -40,14 +40,16 @@ func TestIntegration_PostgresRepository(t *testing.T) {
 		t.Fatalf("Failed to clean up test database: %v", err)
 	}
 
+	// Create PostgresDatabase
+	db := database.NewPostgresDatabase(pool, logger)
+
 	// Create repository
-	repo := repository.NewPostgresTodoRepository(db)
+	repo := repository.NewPostgresTodoRepository(db, logger)
 
 	// Test Create
-	todo := &model.Todo{
-		Title:       "Integration Test Todo",
-		Description: "Testing with real database",
-		Completed:   false,
+	todo := &models.Todo{
+		Todo:   "Integration Test Todo - Testing with real database",
+		Status: "pending",
 	}
 
 	err = repo.Create(ctx, todo)
@@ -66,8 +68,8 @@ func TestIntegration_PostgresRepository(t *testing.T) {
 	if fetchedTodo == nil {
 		t.Fatal("Expected to get todo, got nil")
 	}
-	if fetchedTodo.Title != todo.Title {
-		t.Errorf("Expected title '%s', got '%s'", todo.Title, fetchedTodo.Title)
+	if fetchedTodo.Todo != todo.Todo {
+		t.Errorf("Expected todo text '%s', got '%s'", todo.Todo, fetchedTodo.Todo)
 	}
 
 	// More integration tests...

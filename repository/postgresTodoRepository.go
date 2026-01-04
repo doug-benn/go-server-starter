@@ -25,8 +25,8 @@ func NewPostgresTodoRepository(db *database.PostgresDatabase, logger *slog.Logge
 
 func (r *PostgresTodoRepository) Create(ctx context.Context, todo *models.Todo) error {
 	query := `
-		INSERT INTO todos (title, description, completed, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO todos (todo, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id
 	`
 
@@ -37,9 +37,8 @@ func (r *PostgresTodoRepository) Create(ctx context.Context, todo *models.Todo) 
 	err := r.db.Pool().QueryRow(
 		ctx,
 		query,
-		todo.Title,
-		todo.Description,
-		todo.Completed,
+		todo.Todo,
+		todo.Status,
 		todo.CreatedAt,
 		todo.UpdatedAt,
 	).Scan(&todo.ID)
@@ -49,7 +48,7 @@ func (r *PostgresTodoRepository) Create(ctx context.Context, todo *models.Todo) 
 
 func (r *PostgresTodoRepository) GetByID(ctx context.Context, id int64) (*models.Todo, error) {
 	query := `
-		SELECT id, title, description, completed, created_at, updated_at
+		SELECT id, todo, status, created_at, updated_at
 		FROM todos
 		WHERE id = $1
 	`
@@ -57,16 +56,15 @@ func (r *PostgresTodoRepository) GetByID(ctx context.Context, id int64) (*models
 	todo := &models.Todo{}
 	err := r.db.Pool().QueryRow(ctx, query, id).Scan(
 		&todo.ID,
-		&todo.Title,
-		&todo.Description,
-		&todo.Completed,
+		&todo.Todo,
+		&todo.Status,
 		&todo.CreatedAt,
 		&todo.UpdatedAt,
 	)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, models.ErrTaskNotFound
 		}
 		return nil, err
 	}
@@ -76,7 +74,7 @@ func (r *PostgresTodoRepository) GetByID(ctx context.Context, id int64) (*models
 
 func (r *PostgresTodoRepository) GetAll(ctx context.Context) (models.Todos, error) {
 	query := `
-		SELECT id, title, description, completed, created_at, updated_at
+		SELECT id, todo, status, created_at, updated_at
 		FROM todos
 		ORDER BY created_at DESC
 	`
@@ -92,9 +90,8 @@ func (r *PostgresTodoRepository) GetAll(ctx context.Context) (models.Todos, erro
 		todo := models.Todo{}
 		err := rows.Scan(
 			&todo.ID,
-			&todo.Title,
-			&todo.Description,
-			&todo.Completed,
+			&todo.Todo,
+			&todo.Status,
 			&todo.CreatedAt,
 			&todo.UpdatedAt,
 		)
@@ -114,8 +111,8 @@ func (r *PostgresTodoRepository) GetAll(ctx context.Context) (models.Todos, erro
 func (r *PostgresTodoRepository) Update(ctx context.Context, todo *models.Todo) error {
 	query := `
 		UPDATE todos
-		SET title = $1, description = $2, completed = $3, updated_at = $4
-		WHERE id = $5
+		SET todo = $1, status = $2, updated_at = $3
+		WHERE id = $4
 	`
 
 	todo.UpdatedAt = time.Now()
@@ -123,9 +120,8 @@ func (r *PostgresTodoRepository) Update(ctx context.Context, todo *models.Todo) 
 	_, err := r.db.Pool().Exec(
 		ctx,
 		query,
-		todo.Title,
-		todo.Description,
-		todo.Completed,
+		todo.Todo,
+		todo.Status,
 		todo.UpdatedAt,
 		todo.ID,
 	)
@@ -146,7 +142,7 @@ func (r *PostgresTodoRepository) Delete(ctx context.Context, id int64) error {
 func (r *PostgresTodoRepository) MarkAsCompleted(ctx context.Context, id int64) error {
 	query := `
 		UPDATE todos
-		SET completed = true, updated_at = $1
+		SET status = 'completed', updated_at = $1
 		WHERE id = $2
 	`
 
