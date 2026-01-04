@@ -88,27 +88,46 @@ func run(w io.Writer, args []string) error {
 	postgresListener.ListenToChannel(ctx, "events")
 
 	go func() {
+		defer func() {
+			logger.Info("database listener goroutine shutting down")
+			if err := postgresListener.Close(ctx); err != nil {
+				logger.Error("error closing database listener", "error", err)
+			}
+		}()
+
 		for {
-			// Get raw notification from database
-			notification, err := postgresListener.WaitForNotification(ctx)
-			if err != nil {
-				// handle error
-				continue
+			select {
+			case <-ctx.Done():
+				logger.Info("database listener context cancelled, shutting down")
+				return
+			default:
+				notification, err := postgresListener.WaitForNotification(ctx)
+				if err != nil {
+					if ctx.Err() != nil {
+						// Context was cancelled, exit gracefully
+						return
+					}
+					logger.Error("database listener error", "error", err)
+					continue
+				}
+
+				payload, err := DecodeAsDatabaseEvent(notification.Payload)
+				if err != nil {
+					logger.Error("Decode error", "error", err)
+					continue
+				}
+
+				logger.Debug("received database notification",
+					"channel", notification.Channel,
+					"table", payload.Table,
+					"action", payload.Action)
+
+				event := sse.Event{
+					Data: notification.Payload,
+				}
+
+				sseProducer.Broadcast(ctx, event)
 			}
-
-			payload, err := DecodeAsDatabaseEvent(notification.Payload)
-			if err != nil {
-				logger.Error("Decode error", "error", err)
-			}
-
-			fmt.Println(payload)
-
-			event := sse.Event{
-				Data: notification.Payload,
-			}
-
-			sseProducer.Broadcast(ctx, event)
-
 		}
 	}()
 
@@ -176,6 +195,11 @@ func run(w io.Writer, args []string) error {
 
 		// cancel the main context
 		cancel()
+
+		// Close the database listener properly
+		if err := postgresListener.Close(ctx); err != nil {
+			logger.Error("error closing database listener during shutdown", "error", err)
+		}
 
 		// services cleanup
 		postgresDatabase.Close()
