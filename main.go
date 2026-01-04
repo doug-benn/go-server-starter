@@ -115,12 +115,15 @@ func run(w io.Writer, args []string) error {
 	mux := http.NewServeMux()
 	router.AddRoutes(mux, logger, cache, sseProducer, todoService)
 
-	handler := middleware.Recovery(logger)(mux)
-	handler = middleware.AccessLogger(logger, middleware.IgnorePath("/events"))(mux)
+	// Create middleware chain with proper chaining
+	middlewareChain := middleware.NewChain(
+		middleware.Recovery(logger),
+		middleware.AccessLogger(logger, middleware.IgnorePath("/events")),
+	)
 
-	handler = std.Handler("", metricsware.New(metricsware.Config{
+	handler := std.Handler("", metricsware.New(metricsware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{}),
-	}), handler)
+	}), middlewareChain.Build(mux))
 
 	// HTTP Server
 	server := &http.Server{
