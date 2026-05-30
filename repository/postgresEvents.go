@@ -12,6 +12,8 @@ import (
 	"github.com/doug-benn/go-server-starter/sse"
 )
 
+const eventChannelBuffer = 100
+
 type DatabaseEvent struct {
 	Table     string         `json:"table"`
 	Action    string         `json:"action"`
@@ -28,6 +30,10 @@ func DecodeAsDatabaseEvent(payload []byte) (*DatabaseEvent, error) {
 }
 
 func NotificationProcessing(ctx context.Context, logger *slog.Logger, postgresListener database.Listener, sseProducer *producer.Producer[sse.Event]) {
+	eventCh := make(chan sse.Event, eventChannelBuffer)
+
+	go drainAndBroadcast(ctx, eventCh, sseProducer)
+
 	for {
 		notification, err := postgresListener.WaitForNotification(ctx)
 		if err != nil {
@@ -49,10 +55,24 @@ func NotificationProcessing(ctx context.Context, logger *slog.Logger, postgresLi
 			"action", payload.Action,
 		)
 
-		event := sse.Event{
-			Data: payload,
+		select {
+		case eventCh <- sse.Event{Data: payload}:
+		default:
+			logger.Warn("event channel full, dropping notification",
+				"table", payload.Table,
+				"action", payload.Action,
+			)
 		}
+	}
+}
 
-		sseProducer.Broadcast(ctx, event)
+func drainAndBroadcast(ctx context.Context, eventCh <-chan sse.Event, sseProducer *producer.Producer[sse.Event]) {
+	for {
+		select {
+		case event := <-eventCh:
+			sseProducer.Broadcast(ctx, event)
+		case <-ctx.Done():
+			return
+		}
 	}
 }
