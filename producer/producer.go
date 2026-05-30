@@ -144,7 +144,11 @@ func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 			select {
 			case listener.events <- event:
 			case <-time.After(ep.broadcastTimeout):
-				ep.logger.Info("broadcast to subscriber timed out", "listener id", listener.id)
+				ep.logger.Warn("subscriber too slow, dropping event",
+					"subscriber_id", listener.id,
+					"buffer_capacity", cap(listener.events),
+					"broadcast_timeout", ep.broadcastTimeout,
+				)
 			case <-ctx.Done():
 			}
 		}(sub)

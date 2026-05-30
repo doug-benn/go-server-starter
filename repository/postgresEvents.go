@@ -58,9 +58,11 @@ func NotificationProcessing(ctx context.Context, logger *slog.Logger, postgresLi
 		select {
 		case eventCh <- sse.Event{Data: payload}:
 		default:
-			logger.Warn("event channel full, dropping notification",
+			logger.Warn("drain too slow, dropping notification",
 				"table", payload.Table,
 				"action", payload.Action,
+				"channel_capacity", cap(eventCh),
+				"channel_usage", len(eventCh),
 			)
 		}
 	}
