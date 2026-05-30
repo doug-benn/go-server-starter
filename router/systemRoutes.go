@@ -5,11 +5,15 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"runtime/debug"
+	"sync"
 	"time"
 
+	"github.com/doug-benn/go-server-starter/utilities"
 	"github.com/grafana/pyroscope-go"
 	pyroscope_pprof "github.com/grafana/pyroscope-go/http/pprof"
 )
+
+var pyroscopeOnce sync.Once
 
 func HandleGetHealth() http.HandlerFunc {
 	type responseBody struct {
@@ -48,24 +52,31 @@ func HandleGetHealth() http.HandlerFunc {
 	}
 }
 
-// HandleGetDebug is a debug/profiling route for pyroscope
+// HandleGetDebug returns a handler for debug and profiling endpoints.
+// Pyroscope is started lazily on the first request to /debug/pprof/profile.
 func HandleGetDebug() http.Handler {
 	mux := http.NewServeMux()
 
-	// Starting pyroscope profiler
-	pyroscope.Start(pyroscope.Config{
-		ApplicationName: "go-server-starter",
-		ServerAddress:   "http://localhost:4040",
-	})
-
-	// Standard pprof routes (copied from /net/http/pprof)
+	// Standard pprof routes
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-	// This route is special: note that we're using Pyroscope handler here
-	mux.HandleFunc("/debug/pprof/profile", pyroscope_pprof.Profile)
+	// Profile route starts Pyroscope on first use
+	mux.HandleFunc("/debug/pprof/profile", func(w http.ResponseWriter, r *http.Request) {
+		// Extend deadline since CPU profiles typically exceed the server's WriteTimeout
+		rc := http.NewResponseController(w)
+		rc.SetWriteDeadline(time.Now().Add(60 * time.Second))
+
+		pyroscopeOnce.Do(func() {
+			pyroscope.Start(pyroscope.Config{
+				ApplicationName: "go-server-starter",
+				ServerAddress:   utilities.GetEnvOrDefault("PYROSCOPE_ADDRESS", "http://localhost:4040"),
+			})
+		})
+		pyroscope_pprof.Profile(w, r)
+	})
 
 	return mux
 }

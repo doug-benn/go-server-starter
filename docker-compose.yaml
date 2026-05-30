@@ -47,14 +47,25 @@ services:
     ]
     depends_on:
       - postgres
-  
+
+  pyroscope:
+    image: grafana/pyroscope:latest
+    container_name: pyroscope
+    ports:
+      - "4040:4040"
+    command:
+      - "server"
+    restart: unless-stopped
+
 # app:
 #   image: your-app
 #   depends_on:
 #     migrate:
 #       condition: service_completed_successfully
-
-
+#     pyroscope:
+#       condition: service_started
+# 
+# PYROSCOPE_ADDRESS=http://pyroscope:4040
 
 volumes:
   postgres:

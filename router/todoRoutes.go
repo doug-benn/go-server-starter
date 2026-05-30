@@ -13,12 +13,14 @@ func HandleGetTodos(logger *slog.Logger, todoService services.TodoService) http.
 		data, err := todoService.GetAllTodos(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 }

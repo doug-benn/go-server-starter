@@ -18,6 +18,7 @@ func HandleHelloWorld(logger *slog.Logger, cache *cache.Cache) http.HandlerFunc 
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 }

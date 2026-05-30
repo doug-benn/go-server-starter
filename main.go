@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,7 +39,7 @@ func run(w io.Writer, args []string) error {
 
 	config, err := loadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config file: %v", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 	fmt.Printf("Loaded Config: %+v\n", config)
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -83,7 +84,7 @@ func (listener *listener) ListenToChannel(ctx context.Context, channel string) e
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 
-	_, err := listener.conn.Exec(ctx, "LISTEN $1", channel)
+	_, err := listener.conn.Exec(ctx, "LISTEN "+pgx.Identifier{channel}.Sanitize())
 	return err
 }
 
@@ -100,7 +101,7 @@ func (listener *listener) UnlistenToChannel(ctx context.Context, channel string)
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 
-	_, err := listener.conn.Exec(ctx, "UNLISTEN $1", channel)
+	_, err := listener.conn.Exec(ctx, "UNLISTEN "+pgx.Identifier{channel}.Sanitize())
 	return err
 }
 

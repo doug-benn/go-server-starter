@@ -42,7 +42,7 @@ type Event struct {
 }
 
 // SSEHandler creates an HTTP handler that serves Server-Sent Events using the producer
-func SSEHandler[T Event](producer *producer.Producer[Event], logger *slog.Logger) http.HandlerFunc {
+func SSEHandler(producer *producer.Producer[Event], logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Set SSE headers
 		w.Header().Set("Content-Type", "text/event-stream")
