@@ -13,6 +13,7 @@ type subId uint64
 
 const (
 	defaultBroadcastTimeout = time.Minute
+	defaultMaxWorkers      = 32
 )
 
 // Producer manages event subscriptions and broadcasts events to them.
@@ -22,6 +23,7 @@ type Producer[T any] struct {
 	nextID           subId
 	doneListener     chan subId    // channel to listen for IDs of subscriptions to be removed.
 	broadcastTimeout time.Duration // maximum duration to wait for an event to be sent.
+	maxWorkers       int           // maximum concurrent goroutines per Broadcast call.
 	logger           *slog.Logger
 }
 
@@ -32,6 +34,15 @@ type ProducerOpt[T any] func(*Producer[T])
 func WithBroadcastTimeout[T any](timeout time.Duration) ProducerOpt[T] {
 	return func(ep *Producer[T]) {
 		ep.broadcastTimeout = timeout
+	}
+}
+
+// WithMaxWorkers sets the maximum number of concurrent goroutines per Broadcast call.
+func WithMaxWorkers[T any](n int) ProducerOpt[T] {
+	return func(ep *Producer[T]) {
+		if n > 0 {
+			ep.maxWorkers = n
+		}
 	}
 }
 
@@ -46,6 +57,7 @@ func NewProducer[T any](opts ...ProducerOpt[T]) *Producer[T] {
 		subs:             make(map[subId]*Subscription[T]),
 		doneListener:     make(chan subId, 100),
 		broadcastTimeout: defaultBroadcastTimeout,
+		maxWorkers:       defaultMaxWorkers,
 		logger:           slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	}
 	for _, opt := range opts {
@@ -111,24 +123,31 @@ func (ep *Producer[T]) Subscribe(bufferSize int) *Subscription[T] {
 }
 
 // Broadcast sends an event to all active subscriptions, respecting a configured timeout or context.
-// It spawns goroutines to send events to each subscription so as to not block the producer to submitting
-// to all consumers. Broadcast should be used if not all consumers are expected to consume the event,
-// within a reasonable time, or if the configured broadcast timeout is short enough.
+// It spawns goroutines to send events to each subscription so as to not block the producer from
+// submitting to all consumers. The number of concurrent goroutines is capped by maxWorkers.
 func (ep *Producer[T]) Broadcast(ctx context.Context, event T) {
 	ep.RLock()
-	defer ep.RUnlock()
-	var wg sync.WaitGroup
+	subs := make([]*Subscription[T], 0, len(ep.subs))
 	for _, sub := range ep.subs {
+		subs = append(subs, sub)
+	}
+	ep.RUnlock()
+
+	sem := make(chan struct{}, ep.maxWorkers)
+	var wg sync.WaitGroup
+	for _, sub := range subs {
+		sem <- struct{}{}
 		wg.Add(1)
-		go func(listener *Subscription[T], w *sync.WaitGroup) {
-			defer w.Done()
+		go func(listener *Subscription[T]) {
+			defer wg.Done()
+			defer func() { <-sem }()
 			select {
 			case listener.events <- event:
 			case <-time.After(ep.broadcastTimeout):
 				ep.logger.Info("broadcast to subscriber timed out", "listener id", listener.id)
 			case <-ctx.Done():
 			}
-		}(sub, &wg)
+		}(sub)
 	}
 	wg.Wait()
 }
