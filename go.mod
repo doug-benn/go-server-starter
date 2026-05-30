@@ -1,6 +1,6 @@
 module github.com/doug-benn/go-server-starter
 
-go 1.24.5
+go 1.26.3
 
 require (
 	github.com/goccy/go-yaml v1.18.0

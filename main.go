@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -33,21 +32,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
-}
-
-type DatabaseEvent struct {
-	Table     string                 `json:"table"`
-	Action    string                 `json:"action"`
-	Timestamp time.Time              `json:"timestamp"`
-	Data      map[string]interface{} `json:"data"`
-}
-
-func DecodeAsDatabaseEvent(payload []byte) (*DatabaseEvent, error) {
-	var event DatabaseEvent
-	if err := json.Unmarshal(payload, &event); err != nil {
-		return nil, err
-	}
-	return &event, nil
 }
 
 func run(w io.Writer, args []string) error {
@@ -87,49 +71,7 @@ func run(w io.Writer, args []string) error {
 	postgresListener.Connect(ctx)
 	postgresListener.ListenToChannel(ctx, "events")
 
-	go func() {
-		defer func() {
-			logger.Info("database listener goroutine shutting down")
-			if err := postgresListener.Close(ctx); err != nil {
-				logger.Error("error closing database listener", "error", err)
-			}
-		}()
-
-		for {
-			select {
-			case <-ctx.Done():
-				logger.Info("database listener context cancelled, shutting down")
-				return
-			default:
-				notification, err := postgresListener.WaitForNotification(ctx)
-				if err != nil {
-					if ctx.Err() != nil {
-						// Context was cancelled, exit gracefully
-						return
-					}
-					logger.Error("database listener error", "error", err)
-					continue
-				}
-
-				payload, err := DecodeAsDatabaseEvent(notification.Payload)
-				if err != nil {
-					logger.Error("Decode error", "error", err)
-					continue
-				}
-
-				logger.Debug("received database notification",
-					"channel", notification.Channel,
-					"table", payload.Table,
-					"action", payload.Action)
-
-				event := sse.Event{
-					Data: notification.Payload,
-				}
-
-				sseProducer.Broadcast(ctx, event)
-			}
-		}
-	}()
+	go repository.NotificationProcessing(ctx, logger, postgresListener, sseProducer)
 
 	mux := http.NewServeMux()
 	router.AddRoutes(mux, logger, cache, sseProducer, todoService)
