@@ -156,10 +156,7 @@ func (db *PostgresDatabase) pingWithRetry(ctx context.Context) error {
 		}
 
 		// Calculate next delay with exponential backoff
-		delay = time.Duration(float64(delay) * db.config.BackoffMultiplier)
-		if delay > db.config.MaxRetryDelay {
-			delay = db.config.MaxRetryDelay
-		}
+		delay = min(time.Duration(float64(delay)*db.config.BackoffMultiplier), db.config.MaxRetryDelay)
 	}
 
 	return nil

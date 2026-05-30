@@ -115,7 +115,7 @@ func TestContextCancellationCleansUpMultipleSubscribers(t *testing.T) {
 	subs := make([]*Subscription[int], numSubs)
 	nextDone := make(chan error, numSubs)
 
-	for i := 0; i < numSubs; i++ {
+	for i := range numSubs {
 		subs[i] = producer.Subscribe(5)
 
 		// Start blocking Next() calls for each subscription
@@ -132,7 +132,7 @@ func TestContextCancellationCleansUpMultipleSubscribers(t *testing.T) {
 	cancel()
 
 	// All Next() calls should unblock
-	for i := 0; i < numSubs; i++ {
+	for i := range numSubs {
 		select {
 		case err := <-nextDone:
 			if err != context.Canceled {
