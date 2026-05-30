@@ -83,7 +83,7 @@ func (listener *listener) ListenToChannel(ctx context.Context, channel string) e
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 
-	_, err := listener.conn.Exec(ctx, "LISTEN \""+channel+"\"")
+	_, err := listener.conn.Exec(ctx, "LISTEN $1", channel)
 	return err
 }
 
@@ -100,7 +100,7 @@ func (listener *listener) UnlistenToChannel(ctx context.Context, channel string)
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 
-	_, err := listener.conn.Exec(ctx, "UNLISTEN \""+channel+"\"")
+	_, err := listener.conn.Exec(ctx, "UNLISTEN $1", channel)
 	return err
 }
 
