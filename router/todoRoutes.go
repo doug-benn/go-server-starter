@@ -12,7 +12,7 @@ func HandleGetTodos(logger *slog.Logger, todoService services.TodoService) http.
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := todoService.GetAllTodos(r.Context())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 

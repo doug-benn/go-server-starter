@@ -49,7 +49,7 @@ func setupPostgresContainer(t *testing.T) (PostgresConfig, func()) {
 
 	config := PostgresConfig{
 		Host:              host,
-		Port:              port.Int(),
+		Port:              int(port.Num()),
 		Username:          "testuser",
 		Password:          "testpass",
 		Database:          "testdb",

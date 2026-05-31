@@ -1,0 +1,22 @@
+version: "2"
+sql:
+  - schema: "migrations"
+    queries: "repository"
+    engine: "postgresql"
+    gen:
+      go:
+        package: "repository"
+        out: "repository"
+        output_models_path: "models"
+        output_models_package: "models"
+        output_models_import: "github.com/doug-benn/go-server-starter/models"
+        emit_interface: true
+        emit_json_tags: true
+        sql_package: "pgx/v5"
+        overrides:
+          - column: "todos.created_at"
+            go_type:
+              type: "time.Time"
+          - column: "todos.updated_at"
+            go_type:
+              type: "time.Time"

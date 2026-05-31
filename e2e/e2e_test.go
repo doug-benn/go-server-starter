@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/doug-benn/go-server-starter/database"
-	"github.com/doug-benn/go-server-starter/models"
 	"github.com/doug-benn/go-server-starter/producer"
 	"github.com/doug-benn/go-server-starter/repository"
 	"github.com/doug-benn/go-server-starter/sse"
@@ -56,7 +55,7 @@ func setupPostgresContainer(t *testing.T) (database.PostgresConfig, func()) {
 
 	config := database.PostgresConfig{
 		Host:              host,
-		Port:              port.Int(),
+		Port:              int(port.Num()),
 		Username:          "testuser",
 		Password:          "testpass",
 		Database:          "testdb",
@@ -150,14 +149,14 @@ func TestSSETodoCreated(t *testing.T) {
 
 	sub := sseProducer.Subscribe(100)
 
-	todoRepo := repository.NewPostgresTodoRepository(db, slog.Default())
-	todo := &models.Todo{
+	repo := repository.New(db.Pool())
+	todo, err := repo.CreateTodo(ctx, repository.CreateTodoParams{
 		Title:       "E2E Test Todo",
 		Description: "Testing the SSE pipeline end to end",
 		Completed:   false,
-	}
-
-	err := todoRepo.Create(ctx, todo)
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	})
 	require.NoError(t, err)
 	require.NotZero(t, todo.ID)
 
@@ -189,19 +188,23 @@ func TestSSETodoUpdated(t *testing.T) {
 
 	sub := sseProducer.Subscribe(100)
 
-	todoRepo := repository.NewPostgresTodoRepository(db, slog.Default())
+	repo := repository.New(db.Pool())
 
-	todo := &models.Todo{
+	todo, err := repo.CreateTodo(ctx, repository.CreateTodoParams{
 		Title:       "Update Test",
 		Description: "Will be completed",
 		Completed:   false,
-	}
-	err := todoRepo.Create(ctx, todo)
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	})
 	require.NoError(t, err)
 
 	consumeInsertEvent(ctx, t, sub, "Update Test", "Will be completed")
 
-	err = todoRepo.MarkAsCompleted(ctx, todo.ID)
+	_, err = repo.CompleteTodo(ctx, repository.CompleteTodoParams{
+		UpdatedAt: time.Now(),
+		ID:        todo.ID,
+	})
 	require.NoError(t, err)
 
 	eventCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -230,19 +233,20 @@ func TestSSETodoDeleted(t *testing.T) {
 
 	sub := sseProducer.Subscribe(100)
 
-	todoRepo := repository.NewPostgresTodoRepository(db, slog.Default())
+	repo := repository.New(db.Pool())
 
-	todo := &models.Todo{
+	todo, err := repo.CreateTodo(ctx, repository.CreateTodoParams{
 		Title:       "Delete Test",
 		Description: "Will be deleted",
 		Completed:   false,
-	}
-	err := todoRepo.Create(ctx, todo)
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	})
 	require.NoError(t, err)
 
 	consumeInsertEvent(ctx, t, sub, "Delete Test", "Will be deleted")
 
-	err = todoRepo.Delete(ctx, todo.ID)
+	err = repo.DeleteTodo(ctx, todo.ID)
 	require.NoError(t, err)
 
 	eventCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -271,14 +275,15 @@ func TestMultipleSSEClients(t *testing.T) {
 	subA := sseProducer.Subscribe(100)
 	subB := sseProducer.Subscribe(100)
 
-	todoRepo := repository.NewPostgresTodoRepository(db, slog.Default())
-	todo := &models.Todo{
+	repo := repository.New(db.Pool())
+
+	_, err := repo.CreateTodo(ctx, repository.CreateTodoParams{
 		Title:       "Multi-Client Test",
 		Description: "Testing broadcast to multiple subscribers",
 		Completed:   false,
-	}
-
-	err := todoRepo.Create(ctx, todo)
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	})
 	require.NoError(t, err)
 
 	consumeInsertEvent(ctx, t, subA, "Multi-Client Test", "Testing broadcast to multiple subscribers")

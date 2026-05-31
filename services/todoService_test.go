@@ -3,33 +3,39 @@ package services_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/doug-benn/go-server-starter/models"
+	"github.com/doug-benn/go-server-starter/repository"
 	"github.com/doug-benn/go-server-starter/services"
 	"github.com/doug-benn/go-server-starter/testutils"
 )
 
+func now() time.Time {
+	return time.Now().Truncate(time.Microsecond)
+}
+
 func TestCreateTodo(t *testing.T) {
-	// Arrange
-	mockRepo := &testutils.MockTodoRepository{
-		CreateFunc: func(ctx context.Context, todo *models.Todo) error {
-			// Simulate successful creation by setting an ID
-			todo.ID = 1
-			todo.CreatedAt = time.Now()
-			todo.UpdatedAt = time.Now()
-			return nil
+	mockRepo := &testutils.MockQuerier{
+		CreateTodoFunc: func(ctx context.Context, arg repository.CreateTodoParams) (models.Todo, error) {
+			return models.Todo{
+				ID:          1,
+				Title:       arg.Title,
+				Description: arg.Description,
+				Completed:   arg.Completed,
+				CreatedAt:   arg.CreatedAt,
+				UpdatedAt:   arg.UpdatedAt,
+			}, nil
 		},
 	}
 
-	todoService := services.NewTodoService(mockRepo)
+	todoService := services.NewTodoService(mockRepo, slog.Default())
 	ctx := context.Background()
 
-	// Act
 	todo, err := todoService.CreateTodo(ctx, "Test Todo", "Test Description")
 
-	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -51,21 +57,18 @@ func TestCreateTodo(t *testing.T) {
 }
 
 func TestCreateTodo_Error(t *testing.T) {
-	// Arrange
 	expectedErr := errors.New("database error")
-	mockRepo := &testutils.MockTodoRepository{
-		CreateFunc: func(ctx context.Context, todo *models.Todo) error {
-			return expectedErr
+	mockRepo := &testutils.MockQuerier{
+		CreateTodoFunc: func(ctx context.Context, arg repository.CreateTodoParams) (models.Todo, error) {
+			return models.Todo{}, expectedErr
 		},
 	}
 
-	todoService := services.NewTodoService(mockRepo)
+	todoService := services.NewTodoService(mockRepo, slog.Default())
 	ctx := context.Background()
 
-	// Act
 	todo, err := todoService.CreateTodo(ctx, "Test Todo", "Test Description")
 
-	// Assert
 	if err != expectedErr {
 		t.Errorf("Expected error %v, got %v", expectedErr, err)
 	}
@@ -75,33 +78,30 @@ func TestCreateTodo_Error(t *testing.T) {
 }
 
 func TestGetTodoByID(t *testing.T) {
-	// Arrange
-	now := time.Now()
-	expectedTodo := &models.Todo{
+	ts := now()
+	expectedTodo := models.Todo{
 		ID:          1,
 		Title:       "Test Todo",
 		Description: "Test Description",
 		Completed:   false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CreatedAt:   ts,
+		UpdatedAt:   ts,
 	}
 
-	mockRepo := &testutils.MockTodoRepository{
-		GetByIDFunc: func(ctx context.Context, id int64) (*models.Todo, error) {
+	mockRepo := &testutils.MockQuerier{
+		GetTodoFunc: func(ctx context.Context, id int32) (models.Todo, error) {
 			if id == 1 {
 				return expectedTodo, nil
 			}
-			return nil, models.ErrTaskNotFound
+			return models.Todo{}, errors.New("not found")
 		},
 	}
 
-	todoService := services.NewTodoService(mockRepo)
+	todoService := services.NewTodoService(mockRepo, slog.Default())
 	ctx := context.Background()
 
-	// Act
 	todo, err := todoService.GetTodoByID(ctx, 1)
 
-	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -117,40 +117,37 @@ func TestGetTodoByID(t *testing.T) {
 }
 
 func TestGetAllTodos(t *testing.T) {
-	// Arrange
-	now := time.Now()
-	expectedTodos := models.Todos{
+	ts := now()
+	expectedTodos := []models.Todo{
 		{
 			ID:          1,
 			Title:       "Todo 1",
 			Description: "Description 1",
 			Completed:   false,
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			CreatedAt:   ts,
+			UpdatedAt:   ts,
 		},
 		{
 			ID:          2,
 			Title:       "Todo 2",
 			Description: "Description 2",
 			Completed:   true,
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			CreatedAt:   ts,
+			UpdatedAt:   ts,
 		},
 	}
 
-	mockRepo := &testutils.MockTodoRepository{
-		GetAllFunc: func(ctx context.Context) (models.Todos, error) {
+	mockRepo := &testutils.MockQuerier{
+		ListTodosFunc: func(ctx context.Context) ([]models.Todo, error) {
 			return expectedTodos, nil
 		},
 	}
 
-	todoService := services.NewTodoService(mockRepo)
+	todoService := services.NewTodoService(mockRepo, slog.Default())
 	ctx := context.Background()
 
-	// Act
 	todos, err := todoService.GetAllTodos(ctx)
 
-	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -168,22 +165,19 @@ func TestGetAllTodos(t *testing.T) {
 }
 
 func TestCompleteTodo(t *testing.T) {
-	// Arrange
-	var completedID int64
-	mockRepo := &testutils.MockTodoRepository{
-		MarkAsCompletedFunc: func(ctx context.Context, id int64) error {
-			completedID = id
-			return nil
+	var completedID int32
+	mockRepo := &testutils.MockQuerier{
+		CompleteTodoFunc: func(ctx context.Context, arg repository.CompleteTodoParams) (models.Todo, error) {
+			completedID = arg.ID
+			return models.Todo{}, nil
 		},
 	}
 
-	todoService := services.NewTodoService(mockRepo)
+	todoService := services.NewTodoService(mockRepo, slog.Default())
 	ctx := context.Background()
 
-	// Act
 	err := todoService.CompleteTodo(ctx, 1)
 
-	// Assert
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}

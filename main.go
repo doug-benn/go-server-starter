@@ -54,8 +54,7 @@ func run(w io.Writer, args []string) error {
 		return err
 	}
 
-	todoRepository := repository.NewPostgresTodoRepository(postgresDatabase, logger)
-	todoService := services.NewTodoService(todoRepository)
+	todoService := services.NewTodoService(repository.New(postgresDatabase.Pool()), logger)
 
 	// Create a producer for FizzBuzz events with a 5-second broadcast timeout
 	sseProducer := producer.NewProducer(

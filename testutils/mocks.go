@@ -4,72 +4,40 @@ import (
 	"context"
 
 	"github.com/doug-benn/go-server-starter/models"
+	"github.com/doug-benn/go-server-starter/repository"
 )
 
-// MockTodoRepository implements repository. TodoRepository for testing
-type MockTodoRepository struct {
-	CreateFunc          func(ctx context.Context, todo *models.Todo) error
-	GetByIDFunc         func(ctx context.Context, id int64) (*models.Todo, error)
-	GetAllFunc          func(ctx context.Context) (models.Todos, error)
-	UpdateFunc          func(ctx context.Context, todo *models.Todo) error
-	DeleteFunc          func(ctx context.Context, id int64) error
-	MarkAsCompletedFunc func(ctx context.Context, id int64) error
+type MockQuerier struct {
+	CreateTodoFunc   func(ctx context.Context, arg repository.CreateTodoParams) (models.Todo, error)
+	GetTodoFunc      func(ctx context.Context, id int32) (models.Todo, error)
+	ListTodosFunc    func(ctx context.Context) ([]models.Todo, error)
+	UpdateTodoFunc   func(ctx context.Context, arg repository.UpdateTodoParams) (models.Todo, error)
+	DeleteTodoFunc   func(ctx context.Context, id int32) error
+	CompleteTodoFunc func(ctx context.Context, arg repository.CompleteTodoParams) (models.Todo, error)
 }
 
-func (m *MockTodoRepository) Create(ctx context.Context, todo *models.Todo) error {
-	return m.CreateFunc(ctx, todo)
+func (m *MockQuerier) CreateTodo(ctx context.Context, arg repository.CreateTodoParams) (models.Todo, error) {
+	return m.CreateTodoFunc(ctx, arg)
 }
 
-func (m *MockTodoRepository) GetByID(ctx context.Context, id int64) (*models.Todo, error) {
-	return m.GetByIDFunc(ctx, id)
+func (m *MockQuerier) GetTodo(ctx context.Context, id int32) (models.Todo, error) {
+	return m.GetTodoFunc(ctx, id)
 }
 
-func (m *MockTodoRepository) GetAll(ctx context.Context) (models.Todos, error) {
-	return m.GetAllFunc(ctx)
+func (m *MockQuerier) ListTodos(ctx context.Context) ([]models.Todo, error) {
+	return m.ListTodosFunc(ctx)
 }
 
-func (m *MockTodoRepository) Update(ctx context.Context, todo *models.Todo) error {
-	return m.UpdateFunc(ctx, todo)
+func (m *MockQuerier) UpdateTodo(ctx context.Context, arg repository.UpdateTodoParams) (models.Todo, error) {
+	return m.UpdateTodoFunc(ctx, arg)
 }
 
-func (m *MockTodoRepository) Delete(ctx context.Context, id int64) error {
-	return m.DeleteFunc(ctx, id)
-}
-
-func (m *MockTodoRepository) MarkAsCompleted(ctx context.Context, id int64) error {
-	return m.MarkAsCompletedFunc(ctx, id)
-}
-
-// MockTodoService implements service.TodoService for testing
-type MockTodoService struct {
-	CreateTodoFunc   func(ctx context.Context, title, description string) (*models.Todo, error)
-	GetTodoByIDFunc  func(ctx context.Context, id int64) (*models.Todo, error)
-	GetAllTodosFunc  func(ctx context.Context) (models.Todos, error)
-	UpdateTodoFunc   func(ctx context.Context, todo *models.Todo) error
-	DeleteTodoFunc   func(ctx context.Context, id int64) error
-	CompleteTodoFunc func(ctx context.Context, id int64) error
-}
-
-func (m *MockTodoService) CreateTodo(ctx context.Context, title, description string) (*models.Todo, error) {
-	return m.CreateTodoFunc(ctx, title, description)
-}
-
-func (m *MockTodoService) GetTodoByID(ctx context.Context, id int64) (*models.Todo, error) {
-	return m.GetTodoByIDFunc(ctx, id)
-}
-
-func (m *MockTodoService) GetAllTodos(ctx context.Context) (models.Todos, error) {
-	return m.GetAllTodosFunc(ctx)
-}
-
-func (m *MockTodoService) UpdateTodo(ctx context.Context, todo *models.Todo) error {
-	return m.UpdateTodoFunc(ctx, todo)
-}
-
-func (m *MockTodoService) DeleteTodo(ctx context.Context, id int64) error {
+func (m *MockQuerier) DeleteTodo(ctx context.Context, id int32) error {
 	return m.DeleteTodoFunc(ctx, id)
 }
 
-func (m *MockTodoService) CompleteTodo(ctx context.Context, id int64) error {
-	return m.CompleteTodoFunc(ctx, id)
+func (m *MockQuerier) CompleteTodo(ctx context.Context, arg repository.CompleteTodoParams) (models.Todo, error) {
+	return m.CompleteTodoFunc(ctx, arg)
 }
+
+var _ repository.Querier = (*MockQuerier)(nil)
