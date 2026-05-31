@@ -6,31 +6,19 @@ import (
 )
 
 var (
-	ErrInvalidTask     = errors.New("task must have a todo text")
+	ErrInvalidTask     = errors.New("task must have a title and description")
 	ErrTaskNotFound    = errors.New("the task was not found in the repository")
 	ErrFailedToAddTask = errors.New("failed to add the task to the repository")
 	ErrUpdatingTask    = errors.New("failed to update the task in the repository")
 )
 
 type Todo struct {
-	ID        int64     `json:"id"`
-	Todo      string    `json:"todo"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// Helper methods for status checking
-func (t *Todo) IsCompleted() bool {
-	return t.Status == "completed"
-}
-
-func (t *Todo) IsPending() bool {
-	return t.Status == "pending"
-}
-
-func (t *Todo) IsInProgress() bool {
-	return t.Status == "in_progress"
+	ID          int64     `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Completed   bool      `json:"completed"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Todos []Todo

@@ -36,9 +36,9 @@ $$;
 
 CREATE TABLE todos (
     id SERIAL PRIMARY KEY,
-    todo TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'pending' 
-        CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    completed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

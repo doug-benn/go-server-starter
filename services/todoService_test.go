@@ -27,7 +27,7 @@ func TestCreateTodo(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	todo, err := todoService.CreateTodo(ctx, "Test Todo Test Description")
+	todo, err := todoService.CreateTodo(ctx, "Test Todo", "Test Description")
 
 	// Assert
 	if err != nil {
@@ -39,11 +39,14 @@ func TestCreateTodo(t *testing.T) {
 	if todo.ID != 1 {
 		t.Errorf("Expected ID 1, got %d", todo.ID)
 	}
-	if todo.Todo != "Test Todo Test Description" {
-		t.Errorf("Expected todo text 'Test Todo Test Description', got '%s'", todo.Todo)
+	if todo.Title != "Test Todo" {
+		t.Errorf("Expected title 'Test Todo', got '%s'", todo.Title)
 	}
-	if todo.Status != "pending" {
-		t.Errorf("Expected status 'pending', got '%s'", todo.Status)
+	if todo.Description != "Test Description" {
+		t.Errorf("Expected description 'Test Description', got '%s'", todo.Description)
+	}
+	if todo.Completed {
+		t.Errorf("Expected completed to be false, got true")
 	}
 }
 
@@ -60,7 +63,7 @@ func TestCreateTodo_Error(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	todo, err := todoService.CreateTodo(ctx, "Test Todo Test Description")
+	todo, err := todoService.CreateTodo(ctx, "Test Todo", "Test Description")
 
 	// Assert
 	if err != expectedErr {
@@ -75,11 +78,12 @@ func TestGetTodoByID(t *testing.T) {
 	// Arrange
 	now := time.Now()
 	expectedTodo := &models.Todo{
-		ID:        1,
-		Todo:      "Test Todo Test Description",
-		Status:    "pending",
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          1,
+		Title:       "Test Todo",
+		Description: "Test Description",
+		Completed:   false,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	mockRepo := &testutils.MockTodoRepository{
@@ -107,8 +111,8 @@ func TestGetTodoByID(t *testing.T) {
 	if todo.ID != expectedTodo.ID {
 		t.Errorf("Expected ID %d, got %d", expectedTodo.ID, todo.ID)
 	}
-	if todo.Todo != expectedTodo.Todo {
-		t.Errorf("Expected todo text '%s', got '%s'", expectedTodo.Todo, todo.Todo)
+	if todo.Title != expectedTodo.Title {
+		t.Errorf("Expected title '%s', got '%s'", expectedTodo.Title, todo.Title)
 	}
 }
 
@@ -117,18 +121,20 @@ func TestGetAllTodos(t *testing.T) {
 	now := time.Now()
 	expectedTodos := models.Todos{
 		{
-			ID:        1,
-			Todo:      "Todo 1 Description 1",
-			Status:    "pending",
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:          1,
+			Title:       "Todo 1",
+			Description: "Description 1",
+			Completed:   false,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		},
 		{
-			ID:        2,
-			Todo:      "Todo 2 Description 2",
-			Status:    "completed",
-			CreatedAt: now,
-			UpdatedAt: now,
+			ID:          2,
+			Title:       "Todo 2",
+			Description: "Description 2",
+			Completed:   true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		},
 	}
 
@@ -155,8 +161,8 @@ func TestGetAllTodos(t *testing.T) {
 		if todo.ID != expectedTodos[i].ID {
 			t.Errorf("Todo %d: Expected ID %d, got %d", i, expectedTodos[i].ID, todo.ID)
 		}
-		if todo.Todo != expectedTodos[i].Todo {
-			t.Errorf("Todo %d: Expected todo text '%s', got '%s'", i, expectedTodos[i].Todo, todo.Todo)
+		if todo.Title != expectedTodos[i].Title {
+			t.Errorf("Todo %d: Expected title '%s', got '%s'", i, expectedTodos[i].Title, todo.Title)
 		}
 	}
 }

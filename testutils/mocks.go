@@ -42,7 +42,7 @@ func (m *MockTodoRepository) MarkAsCompleted(ctx context.Context, id int64) erro
 
 // MockTodoService implements service.TodoService for testing
 type MockTodoService struct {
-	CreateTodoFunc   func(ctx context.Context, todoText string) (*models.Todo, error)
+	CreateTodoFunc   func(ctx context.Context, title, description string) (*models.Todo, error)
 	GetTodoByIDFunc  func(ctx context.Context, id int64) (*models.Todo, error)
 	GetAllTodosFunc  func(ctx context.Context) (models.Todos, error)
 	UpdateTodoFunc   func(ctx context.Context, todo *models.Todo) error
@@ -50,8 +50,8 @@ type MockTodoService struct {
 	CompleteTodoFunc func(ctx context.Context, id int64) error
 }
 
-func (m *MockTodoService) CreateTodo(ctx context.Context, todoText string) (*models.Todo, error) {
-	return m.CreateTodoFunc(ctx, todoText)
+func (m *MockTodoService) CreateTodo(ctx context.Context, title, description string) (*models.Todo, error) {
+	return m.CreateTodoFunc(ctx, title, description)
 }
 
 func (m *MockTodoService) GetTodoByID(ctx context.Context, id int64) (*models.Todo, error) {

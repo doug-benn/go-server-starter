@@ -8,7 +8,7 @@ import (
 )
 
 type TodoService interface {
-	CreateTodo(ctx context.Context, todoText string) (*models.Todo, error)
+	CreateTodo(ctx context.Context, title, description string) (*models.Todo, error)
 	GetTodoByID(ctx context.Context, id int64) (*models.Todo, error)
 	GetAllTodos(ctx context.Context) (models.Todos, error)
 	UpdateTodo(ctx context.Context, todo *models.Todo) error
@@ -27,10 +27,11 @@ func NewTodoService(repo repository.TodoRepository) TodoService {
 	}
 }
 
-func (s *TodoServiceImpl) CreateTodo(ctx context.Context, todoText string) (*models.Todo, error) {
+func (s *TodoServiceImpl) CreateTodo(ctx context.Context, title, description string) (*models.Todo, error) {
 	todo := &models.Todo{
-		Todo:   todoText,
-		Status: "pending",
+		Title:       title,
+		Description: description,
+		Completed:   false,
 	}
 
 	if err := s.repo.Create(ctx, todo); err != nil {
