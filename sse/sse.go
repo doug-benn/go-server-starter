@@ -4,7 +4,6 @@ package sse
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,21 +12,8 @@ import (
 	"github.com/doug-benn/go-server-starter/producer"
 )
 
-// SSE errors
-var (
-	ErrHTTPFlush = errors.New("error: unable to flush")
-)
-
 // WriteTimeout is the timeout for writing to the client.
-var WriteTimeout = 5 * time.Second
-
-type unwrapper interface {
-	Unwrap() http.ResponseWriter
-}
-
-type writeDeadliner interface {
-	SetWriteDeadline(time.Time) error
-}
+const WriteTimeout = 5 * time.Second
 
 // Event represents an SSE event
 // Data can be:
@@ -49,42 +35,18 @@ func SSEHandler(producer *producer.Producer[Event], logger *slog.Logger) http.Ha
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 
-		// Get the flusher/deadliner from the response writer if possible.
-		var flusher http.Flusher
-		flushCheck := w
-		for {
-			if f, ok := flushCheck.(http.Flusher); ok {
-				flusher = f
-				break
-			}
-			if u, ok := flushCheck.(unwrapper); ok {
-				flushCheck = u.Unwrap()
-			} else {
-				break
-			}
-		}
-
-		var deadliner writeDeadliner
-		deadlineCheck := w
-		for {
-			if d, ok := deadlineCheck.(writeDeadliner); ok {
-				deadliner = d
-				break
-			}
-			if u, ok := deadlineCheck.(unwrapper); ok {
-				deadlineCheck = u.Unwrap()
-			} else {
-				break
-			}
-		}
+		rc := http.NewResponseController(w)
 
 		// Subscribe to the producer with a reasonable buffer size
 		// Adjust buffer size based on your expected event rate
 		subscription := producer.Subscribe(100)
 
 		// Send initial connection message
-		fmt.Fprintf(w, "data: {\"type\":\"connected\",\"timestamp\":\"%s\"}\n\n", time.Now().Format(time.RFC3339))
-		flusher.Flush()
+		if _, err := fmt.Fprintf(w, "data: {\"type\":\"connected\",\"timestamp\":\"%s\"}\n\n", time.Now().Format(time.RFC3339)); err != nil {
+			logger.Error("failed to write connected message", "error", err)
+			return
+		}
+		rc.Flush()
 
 		// Create context that cancels when client disconnects
 		ctx, cancel := context.WithCancel(r.Context())
@@ -98,11 +60,7 @@ func SSEHandler(producer *producer.Producer[Event], logger *slog.Logger) http.Ha
 				break
 			}
 
-			if deadliner != nil {
-				if err := deadliner.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
-					logger.Error("unable to set write deadline", "error", err)
-				}
-			} else {
+			if err := rc.SetWriteDeadline(time.Now().Add(WriteTimeout)); err != nil {
 				logger.Warn("write deadline not supported by underlying writer")
 			}
 
@@ -124,6 +82,7 @@ func SSEHandler(producer *producer.Producer[Event], logger *slog.Logger) http.Ha
 				w.Write([]byte(`{"error": "encode error: `))
 				w.Write([]byte(err.Error()))
 				w.Write([]byte("\"}\n\n"))
+				logger.Error("failed to write data prefix", "error", err)
 			}
 
 			// Handle different data types
@@ -142,37 +101,33 @@ func SSEHandler(producer *producer.Producer[Event], logger *slog.Logger) http.Ha
 					w.Write([]byte("\"}\n\n"))
 					logger.Error("failed to encode []byte", "error", err)
 				}
-			case string: // JSON-encode the string
-				encoder := json.NewEncoder(w)
-				if err := encoder.Encode(data); err != nil {
-					w.Write([]byte(`{"error": "encode error"}`))
+			case string:
+				b, err := json.Marshal(data)
+				if err != nil {
+					w.Write([]byte(`{"error": "encode error": "`))
 					w.Write([]byte(err.Error()))
 					w.Write([]byte("\"}\n\n"))
 					logger.Error("failed to encode string data", "error", err)
+				} else {
+					w.Write(b)
 				}
-			default: // JSON-encode any other type
-				encoder := json.NewEncoder(w)
-				if err := encoder.Encode(data); err != nil {
-					w.Write([]byte(`{"error": "encode error"}`))
+			default:
+				b, err := json.Marshal(data)
+				if err != nil {
+					w.Write([]byte(`{"error": "encode error": "`))
 					w.Write([]byte(err.Error()))
 					w.Write([]byte("\"}\n\n"))
 					logger.Error("failed to encode data", "error", err)
+				} else {
+					w.Write(b)
 				}
 			}
 
 			w.Write([]byte("\n\n"))
 
-			if flusher != nil {
-				flusher.Flush()
-			} else {
+			if err := rc.Flush(); err != nil {
 				logger.Error("unable to flush", "error", err)
-			}
-
-			// Check if client disconnected
-			select {
-			case <-ctx.Done():
 				return
-			default:
 			}
 		}
 	}
