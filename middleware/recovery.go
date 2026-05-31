@@ -11,7 +11,7 @@ func Recovery(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
-					buf := make([]byte, 2048)
+					buf := make([]byte, 4096)
 					n := runtime.Stack(buf, false)
 					buf = buf[:n]
 

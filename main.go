@@ -41,7 +41,6 @@ func run(w io.Writer, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
-	fmt.Printf("Loaded Config: %+v\n", config)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 

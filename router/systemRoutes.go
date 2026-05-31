@@ -17,11 +17,11 @@ var pyroscopeOnce sync.Once
 
 func HandleGetHealth() http.HandlerFunc {
 	type responseBody struct {
-		Version        string    `json:"Version"`
-		Uptime         string    `json:"Uptime"`
-		LastCommitHash string    `json:"LastCommitHash"`
-		LastCommitTime time.Time `json:"LastCommitTime"`
-		DirtyBuild     bool      `json:"DirtyBuild"`
+		Version        string    `json:"version"`
+		Uptime         string    `json:"uptime"`
+		LastCommitHash string    `json:"last_commit_hash"`
+		LastCommitTime time.Time `json:"last_commit_time"`
+		DirtyBuild     bool      `json:"dirty_build"`
 	}
 
 	res := responseBody{Version: "0.1"}

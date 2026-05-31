@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -23,19 +22,23 @@ func RateLimiter(r rate.Limit, burst int) func(http.Handler) http.Handler {
 		mu.Lock()
 		defer mu.Unlock()
 
+		now := time.Now()
+
 		if cl, ok := clients[key]; ok {
-			cl.lastSeen = time.Now()
+			cl.lastSeen = now
 			return cl.limiter
 		}
 
 		limiter := rate.NewLimiter(r, burst)
-		clients[key] = &clientLimiter{limiter: limiter, lastSeen: time.Now()}
+		clients[key] = &clientLimiter{limiter: limiter, lastSeen: now}
 
-		if len(clients) > 1000 {
-			now := time.Now()
-			for k, cl := range clients {
-				if now.Sub(cl.lastSeen) > 5*time.Minute {
-					delete(clients, k)
+		cleaned := 0
+		for k, cl := range clients {
+			if now.Sub(cl.lastSeen) > 5*time.Minute {
+				delete(clients, k)
+				cleaned++
+				if cleaned >= 10 {
+					break
 				}
 			}
 		}
@@ -52,12 +55,8 @@ func RateLimiter(r rate.Limit, burst int) func(http.Handler) http.Handler {
 
 			limiter := getLimiter(key)
 
-			reserve := limiter.Reserve()
-			delay := reserve.Delay()
-			if delay > 0 {
-				reserve.Cancel()
-				retryAfter := int(math.Ceil(delay.Seconds()))
-				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			if !limiter.Allow() {
+				w.Header().Set("Retry-After", "1")
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(burst))
 				http.Error(w, "too many requests\n", http.StatusTooManyRequests)
 				return
