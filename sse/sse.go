@@ -78,49 +78,28 @@ func SSEHandler(producer *producer.Producer[Event], logger *slog.Logger) http.Ha
 			}
 
 			// Write the message data.
-			if _, err := w.Write([]byte("data: ")); err != nil {
-				w.Write([]byte(`{"error": "encode error: `))
-				w.Write([]byte(err.Error()))
-				w.Write([]byte("\"}\n\n"))
-				logger.Error("failed to write data prefix", "error", err)
-			}
+			w.Write([]byte("data: "))
 
 			// Handle different data types
 			switch data := event.Data.(type) {
 			case json.RawMessage: // Already valid JSON bytes - write directly
-				if _, err := w.Write(data); err != nil {
-					w.Write([]byte(`{"error": "encode error: `))
-					w.Write([]byte(err.Error()))
-					w.Write([]byte("\"}\n\n"))
-					logger.Error("failed to encode raw json", "error", err)
-				}
+				w.Write(data)
 			case []byte: // Treat as JSON RawMessage
-				if _, err := w.Write(data); err != nil {
-					w.Write([]byte(`{"error": "encode error: `))
-					w.Write([]byte(err.Error()))
-					w.Write([]byte("\"}\n\n"))
-					logger.Error("failed to encode []byte", "error", err)
-				}
+				w.Write(data)
 			case string:
 				b, err := json.Marshal(data)
 				if err != nil {
-					w.Write([]byte(`{"error": "encode error": "`))
-					w.Write([]byte(err.Error()))
-					w.Write([]byte("\"}\n\n"))
 					logger.Error("failed to encode string data", "error", err)
-				} else {
-					w.Write(b)
+					return
 				}
+				w.Write(b)
 			default:
 				b, err := json.Marshal(data)
 				if err != nil {
-					w.Write([]byte(`{"error": "encode error": "`))
-					w.Write([]byte(err.Error()))
-					w.Write([]byte("\"}\n\n"))
 					logger.Error("failed to encode data", "error", err)
-				} else {
-					w.Write(b)
+					return
 				}
+				w.Write(b)
 			}
 
 			w.Write([]byte("\n\n"))
