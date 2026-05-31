@@ -13,13 +13,13 @@ import (
 func AddRoutes(
 	mux *http.ServeMux,
 	logger *slog.Logger,
-	cache *cache.Cache,
+	appCache *cache.Cache,
 	producer *producer.Producer[sse.Event],
 	todoService services.TodoService,
 ) {
 
 	//Register all routes
-	mux.Handle("GET /helloworld", HandleHelloWorld(logger, cache))
+	mux.Handle("GET /helloworld", HandleHelloWorld(logger, appCache))
 	mux.Handle("GET /todos", HandleGetTodos(logger, todoService))
 	mux.Handle("/events", sse.SSEHandler(producer, logger))
 

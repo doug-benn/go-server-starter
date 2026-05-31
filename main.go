@@ -42,9 +42,9 @@ func run(w io.Writer, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	cache := cache.New(5*time.Minute, 10*time.Minute)
+	appCache := cache.New(5*time.Minute, 10*time.Minute)
 
 	// Database Connection
 	postgresDatabase, err := database.NewDatabase(ctx, logger, database.DefaultConfig())
@@ -71,7 +71,7 @@ func run(w io.Writer, args []string) error {
 	go repository.NotificationProcessing(ctx, logger, postgresListener, sseProducer)
 
 	mux := http.NewServeMux()
-	router.AddRoutes(mux, logger, cache, sseProducer, todoService)
+	router.AddRoutes(mux, logger, appCache, sseProducer, todoService)
 
 	// Create middleware chain with proper chaining
 	middlewareChain := middleware.NewChain(

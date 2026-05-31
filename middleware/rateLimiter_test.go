@@ -63,7 +63,7 @@ func TestRateLimiterDifferentIPs(t *testing.T) {
 
 	clientA := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", "/test", nil)
-		req.Header.Set("X-Forwarded-For", "10.0.0.1")
+		req.RemoteAddr = "10.0.0.1:12345"
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 		return rr
@@ -71,7 +71,7 @@ func TestRateLimiterDifferentIPs(t *testing.T) {
 
 	clientB := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", "/test", nil)
-		req.Header.Set("X-Forwarded-For", "10.0.0.2")
+		req.RemoteAddr = "10.0.0.2:12345"
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 		return rr

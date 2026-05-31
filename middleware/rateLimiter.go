@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -48,10 +49,11 @@ func RateLimiter(r rate.Limit, burst int) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := r.RemoteAddr
-			if ff := r.Header.Get("X-Forwarded-For"); ff != "" {
-				key = ff
+			host, _, err := net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				host = r.RemoteAddr
 			}
+			key := host
 
 			limiter := getLimiter(key)
 
