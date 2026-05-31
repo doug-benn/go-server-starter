@@ -77,7 +77,7 @@ func TestSSEHandler_SendsConnectedMessage(t *testing.T) {
 	h := setupSSETest(t)
 	body := readBodyAfterStop(t, h)
 
-	assert.Contains(t, body, `"type":"connected"`)
+	assert.Contains(t, body, `event: connected`)
 	assert.Contains(t, body, `"timestamp"`)
 }
 
@@ -189,7 +189,7 @@ func TestSSEHandler_OmitsEventTypeWhenEmpty(t *testing.T) {
 
 	body := readBodyAfterStop(t, h)
 
-	assert.NotContains(t, body, "event:")
+	assert.Equal(t, 1, strings.Count(body, "event:"), "only the connected message should have an event: field")
 }
 
 func TestSSEHandler_OmitEventTypeWhenMessage(t *testing.T) {

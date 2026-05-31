@@ -165,6 +165,16 @@ type Subscription[T any] struct {
 	logger *slog.Logger
 }
 
+// Events returns a read-only channel of events from the subscription.
+func (es *Subscription[T]) Events() <-chan T {
+	return es.events
+}
+
+// Close sends the subscription ID to the producer's done listener for cleanup.
+func (es *Subscription[T]) Close() {
+	es.done <- es.id
+}
+
 // Next waits for the next event or context cancelation, returning the event or an error.
 func (es *Subscription[T]) Next(ctx context.Context) (T, error) {
 	var zeroVal T
