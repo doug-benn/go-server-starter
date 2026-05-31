@@ -173,3 +173,71 @@ func TestRecoveryPreservesContext(t *testing.T) {
 		t.Errorf("expected status 500, got %d", w.Code)
 	}
 }
+
+func TestRecoveryThroughChain(t *testing.T) {
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	// Chain order matches main.go: Recovery outermost, then AccessLogger
+	chain := NewChain(
+		Recovery(logger),
+		AccessLogger(logger),
+	)
+
+	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic from handler")
+	})
+
+	wrappedHandler := chain.Build(panicHandler)
+
+	req := httptest.NewRequest("GET", "/api/test", nil)
+	req.RemoteAddr = "10.0.0.1:8080"
+	rr := httptest.NewRecorder()
+
+	// Must NOT panic — Recovery should catch it
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("unexpected panic propagated: %v", r)
+		}
+	}()
+	wrappedHandler.ServeHTTP(rr, req)
+
+	// Response must be 500 with the recovery message
+	if rr.Code != 500 {
+		t.Errorf("expected status 500, got %d", rr.Code)
+	}
+	if rr.Body.String() != "internal server error\n" {
+		t.Errorf("expected body %q, got %q", "internal server error\n", rr.Body.String())
+	}
+
+	logOutput := logBuffer.String()
+
+	// Recovery must log the panic with request context
+	if !strings.Contains(logOutput, `"panic!"`) {
+		t.Error("expected panic log entry")
+	}
+	if !strings.Contains(logOutput, `"error":"test panic from handler"`) {
+		t.Error("expected panic message in log")
+	}
+	if !strings.Contains(logOutput, `"method":"GET"`) {
+		t.Error("expected method in log")
+	}
+	if !strings.Contains(logOutput, `"path":"/api/test"`) {
+		t.Error("expected path in log")
+	}
+	if !strings.Contains(logOutput, `"remote_ip":"10.0.0.1:8080"`) {
+		t.Error("expected remote IP in log")
+	}
+	if !strings.Contains(logOutput, `"stack"`) {
+		t.Error("expected stack trace in log")
+	}
+
+	// AccessLogger must log a request entry (status may be 0 since recovery
+	// writes to the original ResponseWriter, not the WriterProxy)
+	if !strings.Contains(logOutput, `"status_code":0`) {
+		t.Error("expected access log with status 0")
+	}
+	if !strings.Contains(logOutput, `"size_bytes":0`) {
+		t.Error("expected access log with size 0")
+	}
+}

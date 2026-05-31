@@ -78,6 +78,7 @@ func run(w io.Writer, args []string) error {
 	// Create middleware chain with proper chaining
 	middlewareChain := middleware.NewChain(
 		middleware.Recovery(logger),
+		middleware.RateLimiter(10, 20),
 		middleware.AccessLogger(logger, middleware.IgnorePath("/events")),
 	)
 

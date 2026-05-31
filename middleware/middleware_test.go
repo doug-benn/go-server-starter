@@ -144,7 +144,7 @@ func TestChainMiddlewarePanicHandling(t *testing.T) {
 	assert.True(t, panicCaught)
 	assert.Equal(t, "test panic", panicMessage)
 	assert.Equal(t, 500, rr.Code)
-	assert.Equal(t, "panic handled", rr.Body.String())
+	assert.Equal(t, "panic handled\n", rr.Body.String())
 }
 
 // TestChainSingleMiddleware tests chain with only one middleware
